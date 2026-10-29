@@ -1,0 +1,9 @@
+/node_modules/
+/dist/
+/target/
+/gen/
+/artifacts/
+__pycache__/
+.ruff_cache/
+*.local
+*.tsbuildinfo

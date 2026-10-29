@@ -1,0 +1,59 @@
+name: tabius-desktop
+arch: amd64
+platform: linux
+version: ${PACKAGE_VERSION}
+release: 1
+section: net
+priority: optional
+maintainer: Tabius contributors
+description: SSH client with terminal sessions, key management, snippets, and port forwarding.
+vendor: Tabius
+homepage: https://github.com/Applone/tabius-desktop
+license: GPL-3.0-only
+contents:
+  - src: ${PACKAGE_ROOT}/usr/bin/tabius-desktop
+    dst: /usr/bin/tabius-desktop
+    expand: true
+    file_info:
+      mode: 0755
+  - src: packaging/linux/dev.tabius.desktop.desktop
+    dst: /usr/share/applications/dev.tabius.desktop.desktop
+  - src: assets/icons/icon.png
+    dst: /usr/share/icons/hicolor/128x128/apps/tabius-desktop.png
+  - src: assets/icons/icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/tabius-desktop.svg
+  - src: LICENSE
+    dst: /usr/share/doc/tabius-desktop/LICENSE
+  - src: README.md
+    dst: /usr/share/doc/tabius-desktop/README.md
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+      - openssh-client
+      - ca-certificates
+    suggests:
+      - mosh
+  rpm:
+    depends:
+      - glibc >= 2.35
+      - libgcc
+      - gtk3
+      - webkit2gtk4.1
+      - openssh-clients
+      - ca-certificates
+    suggests:
+      - mosh
+  archlinux:
+    depends:
+      - glibc>=2.35
+      - gcc-libs
+      - gtk3
+      - webkit2gtk-4.1
+      - openssh
+      - ca-certificates
+    recommends:
+      - mosh

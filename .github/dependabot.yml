@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, rust]
+    reviewers: [Applone]
+    assignees: [Applone]
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      cargo-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript]
+    reviewers: [Applone]
+    assignees: [Applone]
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      bun-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
+    reviewers: [Applone]
+    assignees: [Applone]
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      github-actions-dependencies:
+        patterns: ["*"]

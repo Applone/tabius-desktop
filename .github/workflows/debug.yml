@@ -1,0 +1,37 @@
+name: Debug
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: debug-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - name: Lint and format packaging scripts
+        run: |
+          uv tool run ruff==0.17.2 check scripts
+          uv tool run ruff==0.17.2 format --check scripts
+          bash -n scripts/test-linux-package.sh
+      - name: Validate workflows and desktop entry
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y shellcheck desktop-file-utils
+          shellcheck scripts/test-linux-package.sh
+          desktop-file-validate packaging/linux/dev.tabius.desktop.desktop
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      configuration: Debug

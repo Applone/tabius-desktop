@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tabius
+Comment=A focused SSH workspace
+Exec=tabius-desktop
+Icon=tabius-desktop
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupWMClass=tabius-desktop
