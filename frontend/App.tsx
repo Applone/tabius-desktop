@@ -348,7 +348,7 @@ export function App() {
                   )}
                 </div>
               </header>
-              <div className="page-content">
+              <div className="page-content" key={page}>
                 {syncing && <div className="sync-lock" aria-hidden="true" />}
                 {page === "Hosts" &&
                   (workspace.hosts.length ? (
