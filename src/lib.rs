@@ -843,39 +843,41 @@ mod tests {
     }
     #[test]
     fn private_files_are_exclusive_and_readable_by_openssh() {
-        let temporary = tempfile::tempdir().unwrap();
-        let directory = temporary.path().join("private");
-        storage::directory(&directory).unwrap();
-        let key = directory.join("key");
-        generate_private_key(&key, "test", "ed25519", "").unwrap();
-        let imported = directory.join("imported");
-        let content = fs::read(&key).unwrap();
-        private_write(&imported, &content).unwrap();
-        assert!(private_write(&imported, b"replacement").is_err());
-        assert_eq!(fs::read(&imported).unwrap(), content);
-        let output = Command::new("ssh-keygen")
-            .args(["-y", "-P", "", "-f"])
-            .arg(&imported)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(public_fingerprint(&String::from_utf8(output.stdout).unwrap()).is_ok());
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
-                0o700
+        pty::test_with_timeout(|| {
+            let temporary = tempfile::tempdir().unwrap();
+            let directory = temporary.path().join("private");
+            storage::directory(&directory).unwrap();
+            let key = directory.join("key");
+            generate_private_key(&key, "test", "ed25519", "").unwrap();
+            let imported = directory.join("imported");
+            let content = fs::read(&key).unwrap();
+            private_write(&imported, &content).unwrap();
+            assert!(private_write(&imported, b"replacement").is_err());
+            assert_eq!(fs::read(&imported).unwrap(), content);
+            let output = Command::new("ssh-keygen")
+                .args(["-y", "-P", "", "-f"])
+                .arg(&imported)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
             );
-            assert_eq!(
-                fs::metadata(&imported).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-        }
+            assert!(public_fingerprint(&String::from_utf8(output.stdout).unwrap()).is_ok());
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+                    0o700
+                );
+                assert_eq!(
+                    fs::metadata(&imported).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+        });
     }
 
     fn public_key_fixture() -> String {
