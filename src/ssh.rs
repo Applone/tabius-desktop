@@ -21,6 +21,7 @@ pub struct Host {
 pub struct Settings {
     pub emulator: String,
     pub post_quantum: bool,
+    #[serde(rename = "detectOS")]
     pub detect_os: bool,
 }
 #[derive(Clone, Deserialize)]
@@ -238,6 +239,22 @@ mod tests {
             emulator: "xterm-256color".into(),
             post_quantum: true,
             detect_os: false,
+        }
+    }
+    #[test]
+    fn session_settings_accept_workspace_field_names() {
+        for detect_os in [true, false] {
+            let mut payload = crate::workspace::settings();
+            payload["detectOS"] = serde_json::json!(detect_os);
+            let settings: Settings = serde_json::from_value(payload).unwrap();
+            assert_eq!(settings.emulator, "xterm-256color");
+            assert!(settings.post_quantum);
+            assert_eq!(settings.detect_os, detect_os);
+            let arguments = args(&host(), &settings, None, Path::new("/tmp/data")).unwrap();
+            assert_eq!(
+                arguments.iter().any(|arg| arg.contains("tabius-os=")),
+                detect_os
+            );
         }
     }
     #[test]
