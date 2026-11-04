@@ -12,7 +12,10 @@ export interface Session {
   host: Host;
   forward?: Forward;
 }
-type Output = { type: "data"; data: number[] } | { type: "exit"; code: number };
+type Output =
+  | { type: "data"; data: number[] }
+  | { type: "exit"; code: number }
+  | { type: "status"; status: string };
 export function TerminalPane({
   session,
   settings,
@@ -39,7 +42,6 @@ export function TerminalPane({
     setStatus(attempt ? "Reconnecting" : "Connecting");
     let disposed = false;
     let sessionId: string | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
     const term = new XTerm({
       cursorBlink: true,
       macOptionIsMeta: settingsRef.current.optionAsMeta,
@@ -84,26 +86,19 @@ export function TerminalPane({
     });
     term.parser.registerOscHandler(777, (data) => {
       if (data.startsWith("tabius-os="))
-        osRef.current(
-          session.host.id,
-          data
-            .slice(10)
-            .replace(/[^\w .-]/g, "")
-            .slice(0, 60),
-        );
+        osRef.current(session.host.id, data.slice(10));
       return true;
     });
     const channel = new Channel<Output>();
     channel.onmessage = (message) => {
       if (disposed) return;
       if (message.type === "data") term.write(new Uint8Array(message.data));
+      else if (message.type === "status") setStatus(message.status);
       else {
         setStatus("Disconnected");
         term.writeln(
           `\r\n\x1b[90mSession ended (exit ${message.code}).\x1b[0m`,
         );
-        if (settingsRef.current.autoReconnect && message.code === 255)
-          retry = setTimeout(() => setAttempt((value) => value + 1), 3000);
       }
     };
     void native<string>("start_session", {
@@ -140,7 +135,6 @@ export function TerminalPane({
     observer.observe(container.current);
     return () => {
       disposed = true;
-      clearTimeout(retry);
       observer.disconnect();
       input.dispose();
       resize.dispose();

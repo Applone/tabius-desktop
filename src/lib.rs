@@ -2,17 +2,23 @@ mod pty;
 mod ssh;
 mod storage;
 mod sync;
+mod tabby;
+mod vault;
+mod workspace;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tauri::{Manager, State, ipc::Channel};
 use uuid::Uuid;
 
@@ -20,6 +26,9 @@ type Result<T> = std::result::Result<T, String>;
 struct Session {
     master: pty::Terminal,
     pid: u32,
+    cancelled: Arc<AtomicBool>,
+    rows: u16,
+    cols: u16,
 }
 #[derive(Default, Clone)]
 struct Sessions(Arc<Mutex<HashMap<String, Session>>>);
@@ -41,12 +50,18 @@ fn private_write(path: &Path, content: &[u8]) -> Result<()> {
 #[tauri::command]
 fn load_workspace(app: tauri::AppHandle) -> Result<Value> {
     let path = data_dir(&app)?.join("workspace.json");
-    if !path.exists() {
-        return Ok(
-            json!({"hosts":[],"keys":[],"snippets":[],"forwards":[],"history":[],"settings":{}}),
-        );
+    let mut value = if path.exists() {
+        serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?
+    } else {
+        workspace::empty()
+    };
+    let mut settings = workspace::settings();
+    if let Some(saved) = value["settings"].as_object() {
+        settings.as_object_mut().unwrap().extend(saved.clone());
     }
-    serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    value["settings"] = settings;
+    Ok(value)
 }
 #[tauri::command]
 fn save_workspace(app: tauri::AppHandle, workspace: Value) -> Result<()> {
@@ -76,6 +91,7 @@ fn save_workspace(app: tauri::AppHandle, workspace: Value) -> Result<()> {
 enum Output {
     Data { data: Vec<u8> },
     Exit { code: i32 },
+    Status { status: String },
 }
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -128,13 +144,17 @@ fn start_session(
         return Err("Session already exists.".into());
     }
     let process = pty::spawn(&mut cmd, rows, cols)?;
-    let pid = process.child.id();
+    let mut pid = process.child.id();
+    let cancelled = Arc::new(AtomicBool::new(false));
     let mut reader = process.master.try_clone().map_err(|e| e.to_string())?;
     map.insert(
         id.clone(),
         Session {
             master: process.master,
             pid,
+            cancelled: cancelled.clone(),
+            rows,
+            cols,
         },
     );
     drop(map);
@@ -142,40 +162,106 @@ fn start_session(
     let thread_id = id.clone();
     let mut child = process.child;
     std::thread::spawn(move || {
-        let mut buffer = [0; 16384];
         loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if on_output
-                        .send(Output::Data {
-                            data: buffer[..n].to_vec(),
-                        })
-                        .is_err()
-                    {
-                        pty::stop(pid);
-                        break;
+            let mut buffer = [0; 16384];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if on_output
+                            .send(Output::Data {
+                                data: buffer[..n].to_vec(),
+                            })
+                            .is_err()
+                        {
+                            cancelled.store(true, Ordering::Release);
+                            pty::stop(pid);
+                            break;
+                        }
                     }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
+            }
+            let code = child
+                .wait()
+                .ok()
+                .map(|s| s.exit_code() as i32)
+                .unwrap_or(-1);
+            let reconnect = code == 255
+                && load_workspace(app.clone())
+                    .is_ok_and(|w| w["settings"]["autoReconnect"] == true);
+            if !reconnect || cancelled.load(Ordering::Acquire) {
+                if let Ok(mut map) = shared.0.lock()
+                    && map
+                        .get(&thread_id)
+                        .is_some_and(|session| session.pid == pid)
+                {
+                    map.remove(&thread_id);
+                }
+                let _ = on_output.send(Output::Exit { code });
+                break;
+            }
+            if let Ok(mut map) = shared.0.lock() {
+                if let Some(session) = map.get_mut(&thread_id) {
+                    session.pid = 0;
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+            let _ = on_output.send(Output::Status {
+                status: "Reconnecting".into(),
+            });
+            if !wait_for_retry(&cancelled, std::time::Duration::from_secs(3)) {
+                return;
+            }
+            let Ok(mut map) = shared.0.lock() else {
+                return;
+            };
+            let Some(session) = map.get_mut(&thread_id) else {
+                return;
+            };
+            if cancelled.load(Ordering::Acquire) {
+                return;
+            }
+            let (rows, cols) = (session.rows, session.cols);
+            match pty::spawn(&mut cmd, rows, cols).and_then(|process| {
+                let reader = process.master.try_clone().map_err(|e| e.to_string())?;
+                Ok((process, reader))
+            }) {
+                Ok((process, next_reader)) => {
+                    pid = process.child.id();
+                    child = process.child;
+                    reader = next_reader;
+                    session.pid = pid;
+                    session.master = process.master;
+                    let _ = on_output.send(Output::Status {
+                        status: "Running".into(),
+                    });
+                }
+                Err(_) => {
+                    map.remove(&thread_id);
+                    let _ = on_output.send(Output::Exit { code: -1 });
+                    break;
+                }
             }
         }
-        let code = child
-            .wait()
-            .ok()
-            .map(|s| s.exit_code() as i32)
-            .unwrap_or(-1);
-        if let Ok(mut map) = shared.0.lock()
-            && map
-                .get(&thread_id)
-                .is_some_and(|session| session.pid == pid)
-        {
-            map.remove(&thread_id);
-        }
-        let _ = on_output.send(Output::Exit { code });
     });
     Ok(id)
+}
+fn wait_for_retry(cancelled: &AtomicBool, delay: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + delay;
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return false;
+        }
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            return true;
+        };
+        std::thread::sleep(remaining.min(std::time::Duration::from_millis(100)));
+    }
 }
 #[tauri::command]
 fn write_session(sessions: State<'_, Sessions>, id: String, data: String) -> Result<()> {
@@ -193,15 +279,52 @@ fn write_session(sessions: State<'_, Sessions>, id: String, data: String) -> Res
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
+fn remove_item(
+    app: tauri::AppHandle,
+    workspace: Value,
+    kind: String,
+    item: Value,
+) -> Result<Value> {
+    let next = workspace::edit_workspace(workspace, kind.clone(), item.clone(), true)?;
+    if kind == "key" {
+        delete_key(app, workspace::text(&item["id"]).into())?;
+    }
+    Ok(next)
+}
+#[tauri::command]
+fn run_snippet(
+    app: tauri::AppHandle,
+    sessions: State<'_, Sessions>,
+    id: String,
+    snippet_id: String,
+) -> Result<()> {
+    let workspace = load_workspace(app)?;
+    let snippets = workspace::list(&workspace["snippets"]);
+    let snippet = snippets
+        .iter()
+        .find(|s| s["id"] == snippet_id)
+        .ok_or("Snippet no longer exists.")?;
+    write_session(
+        sessions,
+        id,
+        format!("{}\r", workspace::text(&snippet["command"])),
+    )
+}
+#[tauri::command]
 fn resize_session(sessions: State<'_, Sessions>, id: String, rows: u16, cols: u16) -> Result<()> {
-    let map = sessions.0.lock().map_err(|e| e.to_string())?;
-    let session = map.get(&id).ok_or("Session is no longer running.")?;
+    let mut map = sessions.0.lock().map_err(|e| e.to_string())?;
+    let session = map.get_mut(&id).ok_or("Session is no longer running.")?;
+    session.rows = rows;
+    session.cols = cols;
     pty::resize(&session.master, rows, cols)
 }
 #[tauri::command]
 fn close_session(sessions: State<'_, Sessions>, id: String) -> Result<()> {
     if let Some(session) = sessions.0.lock().map_err(|e| e.to_string())?.remove(&id) {
-        pty::stop(session.pid);
+        session.cancelled.store(true, Ordering::Release);
+        if session.pid != 0 {
+            pty::stop(session.pid);
+        }
     }
     Ok(())
 }
@@ -354,7 +477,6 @@ struct SyncKey {
     secret: String,
     public_key: String,
 }
-#[tauri::command]
 fn read_sync_keys(app: tauri::AppHandle, ids: Vec<String>) -> Result<Vec<SyncKey>> {
     if ids.len() > 1000 {
         return Err("Too many keys to synchronize.".into());
@@ -454,7 +576,6 @@ fn derive_sync_public(path: &Path, content: &str, passphrase: &str) -> Result<St
         })
         .ok_or("Cannot extract the public key.".into())
 }
-#[tauri::command]
 async fn import_sync_key(
     app: tauri::AppHandle,
     name: String,
@@ -487,7 +608,6 @@ async fn import_sync_key(
     .await
     .map_err(|e| e.to_string())?
 }
-#[tauri::command]
 fn delete_key(app: tauri::AppHandle, id: String) -> Result<()> {
     ssh::valid_id(&id)?;
     let path = data_dir(&app)?.join("keys").join(id);
@@ -554,7 +674,6 @@ fn import_known_hosts(app: tauri::AppHandle, content: String) -> Result<()> {
     file.write_all(format!("\n{}\n", lines.join("\n")).as_bytes())
         .map_err(|e| e.to_string())
 }
-#[tauri::command]
 fn remove_known_host(app: tauri::AppHandle, line: String) -> Result<()> {
     let dir = data_dir(&app)?;
     let path = dir.join("known_hosts");
@@ -610,7 +729,6 @@ fn prune_fingerprints(content: &str, removed: &[String]) -> String {
     }
     format!("{}\n", result.join("\n"))
 }
-#[tauri::command]
 fn prune_synced_fingerprints(app: tauri::AppHandle, removed: Vec<String>) -> Result<()> {
     let directory = data_dir(&app)?;
     let path = directory.join("known_hosts");
@@ -623,26 +741,69 @@ fn prune_synced_fingerprints(app: tauri::AppHandle, removed: Vec<String>) -> Res
     private_write(&temporary, pruned.as_bytes())?;
     fs::rename(temporary, path).map_err(|e| e.to_string())
 }
+#[tauri::command]
+fn apply_sync(app: tauri::AppHandle, previous: Value, workspace: Value) -> Result<Vec<String>> {
+    if load_workspace(app.clone())? != previous {
+        return Err(
+            "The local workspace changed after upload. Sync again to apply the remote result."
+                .into(),
+        );
+    }
+    let removed = workspace::list(&previous["sync"]["knownBaseline"])
+        .iter()
+        .filter(|old| {
+            !workspace::list(&workspace["sync"]["fingerprints"])
+                .iter()
+                .any(|new| new["id"] == old["id"] && new["digest"] == old["digest"])
+        })
+        .map(|old| {
+            format!(
+                "{}|{}",
+                workspace::text(&old["id"]),
+                workspace::text(&old["digest"]).trim_end_matches('=')
+            )
+        })
+        .collect();
+    prune_synced_fingerprints(app.clone(), removed)?;
+    save_workspace(app.clone(), workspace.clone())?;
+    let mut warnings = Vec::new();
+    for key in workspace::list(&previous["keys"]) {
+        if !workspace::list(&workspace["keys"])
+            .iter()
+            .any(|k| k["id"] == key["id"])
+            && delete_key(app.clone(), workspace::text(&key["id"]).into()).is_err()
+        {
+            warnings
+                .push("Sync saved, but an unused private key file could not be removed.".into());
+        }
+    }
+    Ok(warnings)
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(Sessions::default())
         .invoke_handler(tauri::generate_handler![
+            workspace::new_item,
+            workspace::edit_workspace,
+            remove_item,
+            workspace::prepare_session,
+            tabby::synchronize_workspace,
+            tabby::list_configurations,
+            tabby::display_known,
+            tabby::forget_fingerprint,
+            apply_sync,
             load_workspace,
             save_workspace,
             start_session,
             write_session,
+            run_snippet,
             resize_session,
             close_session,
             generate_key,
             import_key,
-            delete_key,
             known_hosts,
             import_known_hosts,
-            remove_known_host,
-            sync::tabby_request,
-            read_sync_keys,
-            import_sync_key,
-            prune_synced_fingerprints
         ])
         .build(tauri::generate_context!())
         .expect("Unable to initialize Tabius");
@@ -651,7 +812,10 @@ pub fn run() {
             let sessions = app.state::<Sessions>();
             if let Ok(map) = sessions.0.lock() {
                 for session in map.values() {
-                    pty::stop(session.pid);
+                    session.cancelled.store(true, Ordering::Release);
+                    if session.pid != 0 {
+                        pty::stop(session.pid);
+                    }
                 }
             };
         }
@@ -661,6 +825,22 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    #[test]
+    fn cancelling_a_session_interrupts_its_pending_retry() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_flag = cancelled.clone();
+        let started = std::time::Instant::now();
+        let worker = std::thread::spawn(move || {
+            wait_for_retry(&worker_flag, std::time::Duration::from_secs(10))
+        });
+        cancelled.store(true, Ordering::Release);
+        assert!(!worker.join().unwrap());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(wait_for_retry(
+            &AtomicBool::new(false),
+            std::time::Duration::ZERO
+        ));
+    }
     #[test]
     fn private_files_are_exclusive_and_readable_by_openssh() {
         let temporary = tempfile::tempdir().unwrap();

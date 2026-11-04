@@ -11,21 +11,7 @@ import {
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { native } from "./api";
-import type {
-  Forward,
-  HistoryEntry,
-  Host,
-  KeyEntry,
-  Snippet,
-  Workspace,
-} from "./model";
-import {
-  historyToSnippets,
-  newForward,
-  newHost,
-  upsert,
-  validateHost,
-} from "./model";
+import type { Forward, Host, KeyEntry, Snippet, Workspace } from "./model";
 import { Field, Modal, Toggle } from "./ui";
 export type Editor =
   | { type: "host"; value: Host }
@@ -48,10 +34,10 @@ export function EditorModal({
   onKnown: () => void;
 }) {
   const [host, setHost] = useState(
-    editor.type === "host" ? editor.value : newHost(),
+    editor.type === "host" ? editor.value : ({} as Host),
   );
   const [rule, setRule] = useState(
-    editor.type === "forward" ? editor.value : newForward(),
+    editor.type === "forward" ? editor.value : ({} as Forward),
   );
   const [snippet, setSnippet] = useState(
     editor.type === "snippet"
@@ -75,13 +61,7 @@ export function EditorModal({
     known: "Import known hosts",
   };
   const setH = <K extends keyof Host>(key: K, value: Host[K]) =>
-    setHost({
-      ...host,
-      [key]: value,
-      ...(key === "keyId"
-        ? { syncAuth: value ? "publicKey" : "password", syncKeyRef: null }
-        : {}),
-    });
+    setHost({ ...host, [key]: value });
   const setF = <K extends keyof Forward>(key: K, value: Forward[K]) =>
     setRule({ ...rule, [key]: value });
   async function submit(e: FormEvent) {
@@ -89,50 +69,50 @@ export function EditorModal({
     setError("");
     setBusy(true);
     try {
-      if (editor.type === "host") {
-        const problem = validateHost(host);
-        if (problem) throw new Error(problem);
-        onSave({ ...workspace, hosts: upsert(workspace.hosts, host) });
-      }
-      if (editor.type === "forward") {
-        if (!rule.name.trim() || !rule.hostId)
-          throw new Error("Enter a name and choose a host.");
-        if (
-          ![
-            rule.bindPort,
-            ...(rule.kind === "dynamic" ? [] : [rule.destinationPort]),
-          ].every((p) => Number.isInteger(p) && p >= 1 && p <= 65535)
-        )
-          throw new Error("Ports must be between 1 and 65535.");
-        onSave({ ...workspace, forwards: upsert(workspace.forwards, rule) });
-      }
-      if (editor.type === "snippet") {
-        if (!snippet.name.trim() || !snippet.command.trim())
-          throw new Error("Enter a name and script.");
-        onSave({ ...workspace, snippets: upsert(workspace.snippets, snippet) });
+      if (
+        editor.type === "host" ||
+        editor.type === "forward" ||
+        editor.type === "snippet"
+      ) {
+        onSave(
+          await native("edit_workspace", {
+            workspace,
+            kind: editor.type,
+            item:
+              editor.type === "host"
+                ? host
+                : editor.type === "forward"
+                  ? rule
+                  : snippet,
+            remove: false,
+          }),
+        );
       }
       if (editor.type === "key") {
-        if (!keyName.trim()) throw new Error("Enter a key name.");
         const key = await native<KeyEntry>(
           keyMode === "generate" ? "generate_key" : "import_key",
           { name: keyName, kind, passphrase, publicKey, content: text },
         );
-        onSave({ ...workspace, keys: [...workspace.keys, key] });
+        onSave(
+          await native("edit_workspace", {
+            workspace,
+            kind: "key",
+            item: key,
+            remove: false,
+          }),
+        );
       }
       if (editor.type === "history") {
-        const commands = historyToSnippets(text);
-        if (!commands.length) throw new Error("No commands found.");
-        const history: HistoryEntry[] = commands.map((command) => ({
-          id: crypto.randomUUID(),
-          host: "Imported history",
-          command,
-          date: new Date().toISOString(),
-        }));
-        onSave({
-          ...workspace,
-          history: [...history, ...workspace.history].slice(0, 1000),
-        });
+        onSave(
+          await native("edit_workspace", {
+            workspace,
+            kind: "history",
+            item: text,
+            remove: false,
+          }),
+        );
       }
+
       if (editor.type === "known") {
         await native("import_known_hosts", { content: text });
         onKnown();

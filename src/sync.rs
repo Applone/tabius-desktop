@@ -6,11 +6,11 @@ use std::time::Duration;
 const MAX_RESPONSE: usize = 12 * 1024 * 1024;
 #[derive(Serialize)]
 pub struct Response {
-    body: Value,
-    etag: Option<String>,
+    pub body: Value,
+    pub etag: Option<String>,
 }
 fn endpoint(server: &str, id: Option<u64>) -> Result<Url, String> {
-    let mut url = Url::parse(server).map_err(|_| "Enter an HTTPS Tabby-Web server URL.")?;
+    let mut url = Url::parse(server).map_err(|_| "Enter an HTTPS sync server URL.")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -31,7 +31,6 @@ fn endpoint(server: &str, id: Option<u64>) -> Result<Url, String> {
     url.set_path(&path);
     Ok(url)
 }
-#[tauri::command]
 pub async fn tabby_request(
     server: String,
     token: String,
@@ -70,19 +69,19 @@ pub async fn tabby_request(
     }
     // Do not include reqwest errors or remote bodies: they can contain tokens or vault content.
     let mut response = request.send().await.map_err(
-        |_| "Cannot reach Tabby-Web. Check the URL, TLS certificate, and network connection.",
+        |_| "Cannot reach the sync server. Check the URL, TLS certificate, and network connection.",
     )?;
     match response.status().as_u16() {
         200..=299 => (),
         401 | 403 => return Err("The synchronization token was rejected.".into()),
         409 | 412 => return Err("The remote configuration changed. Sync again.".into()),
-        code => return Err(format!("Tabby-Web returned HTTP {code}.")),
+        code => return Err(format!("Sync server returned HTTP {code}.")),
     }
     if response
         .content_length()
         .is_some_and(|n| n > MAX_RESPONSE as u64)
     {
-        return Err("Tabby-Web response exceeds 12 MB.".into());
+        return Err("Sync server response exceeds 12 MB.".into());
     }
     let etag = response
         .headers()
@@ -93,17 +92,17 @@ pub async fn tabby_request(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|_| "Could not read the Tabby-Web response.")?
+        .map_err(|_| "Could not read the sync server response.")?
     {
         if bytes.len() + chunk.len() > MAX_RESPONSE {
-            return Err("Tabby-Web response exceeds 12 MB.".into());
+            return Err("Sync server response exceeds 12 MB.".into());
         }
         bytes.extend_from_slice(&chunk);
     }
     let body = if bytes.is_empty() {
         Value::Null
     } else {
-        serde_json::from_slice(&bytes).map_err(|_| "Tabby-Web returned invalid JSON.")?
+        serde_json::from_slice(&bytes).map_err(|_| "Sync server returned invalid JSON.")?
     };
     Ok(Response { body, etag })
 }

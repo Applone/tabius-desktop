@@ -5,9 +5,8 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { native } from "./api";
-import type { KeyEntry, KnownHost, Workspace } from "./model";
-import type { RemoteConfiguration, SecretKey, SyncResponse } from "./sync";
-import { synchronize } from "./sync";
+import type { Workspace } from "./model";
+import type { RemoteConfiguration } from "./sync";
 import { Field } from "./ui";
 export function SyncSettings({
   workspace,
@@ -23,6 +22,9 @@ export function SyncSettings({
   const [server, setServer] = useState(workspace.sync?.server ?? "");
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
+  const [encryption, setEncryption] = useState<"modern" | "tabby">(
+    workspace.sync ? (workspace.sync.encryption ?? "tabby") : "modern",
+  );
   const [configurationId, setConfigurationId] = useState<number | undefined>(
     workspace.sync?.configurationId,
   );
@@ -33,40 +35,29 @@ export function SyncSettings({
     [error, setError] = useState(""),
     [status, setStatus] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
-  function request(id?: number, content?: string, etag?: string | null) {
-    return native<SyncResponse>("tabby_request", {
-      server: server.trim().replace(/\/+$/, ""),
-      token: token.trim(),
-      configurationId: id ?? null,
-      content: content ?? null,
-      etag: etag ?? null,
-    });
+  function selectConfiguration(id: number | undefined) {
+    if (id !== configurationId) {
+      setEncryption(
+        server.trim().replace(/\/+$/, "") === workspace.sync?.server &&
+          id === workspace.sync.configurationId
+          ? (workspace.sync.encryption ?? "tabby")
+          : "modern",
+      );
+    }
+    setConfigurationId(id);
+    setStatus("");
   }
   async function load() {
     setBusy(true);
     setError("");
     setStatus("");
     try {
-      const response = await request();
-      if (!Array.isArray(response.body))
-        throw new Error("Invalid Tabby-Web configurations response.");
-      const list: RemoteConfiguration[] = response.body.map(
-        (entry: unknown) => {
-          if (
-            !entry ||
-            typeof entry !== "object" ||
-            !("id" in entry) ||
-            !Number.isSafeInteger(entry.id) ||
-            Number(entry.id) <= 0 ||
-            !("name" in entry) ||
-            typeof entry.name !== "string"
-          )
-            throw new Error("Invalid Tabby-Web configuration.");
-          return { id: Number(entry.id), name: entry.name };
-        },
-      );
+      const list = await native<RemoteConfiguration[]>("list_configurations", {
+        server,
+        token,
+      });
       setConfigurations(list);
-      setConfigurationId(
+      selectConfiguration(
         list.some((x) => x.id === configurationId)
           ? configurationId
           : list.length === 1
@@ -74,7 +65,9 @@ export function SyncSettings({
             : undefined,
       );
       if (!list.length)
-        setError("No configurations found. Create one in Tabby-Web first.");
+        setError(
+          "No configurations found. Create one on your sync server first.",
+        );
     } catch (error) {
       setError(String(error).replace(/^Error: /, ""));
     } finally {
@@ -89,31 +82,9 @@ export function SyncSettings({
     setStatus("");
     setWarnings([]);
     try {
-      const result = await synchronize(
-        workspace,
-        server.trim().replace(/\/+$/, ""),
-        configurationId,
-        password,
-        {
-          request,
-          readKeys: (keys) =>
-            native("read_sync_keys", { ids: keys.map((k) => k.id) }),
-          importKey: (key: SecretKey) =>
-            native<KeyEntry>("import_sync_key", {
-              name: key.name,
-              secret: key.secret,
-              publicKey: key.publicKey,
-              passphrase: key.passphrase ?? "",
-            }),
-          deleteKey: (id) => native("delete_key", { id }),
-          knownHosts: () => native<KnownHost[]>("known_hosts"),
-          ensureUnchanged: () => {
-            if (!isCurrent())
-              throw new Error(
-                "The local workspace changed during sync. Try again.",
-              );
-          },
-        },
+      const result = await native<{ workspace: Workspace; warnings: string[] }>(
+        "synchronize_workspace",
+        { workspace, server, token, configurationId, password, encryption },
       );
       if (!isCurrent())
         throw new Error(
@@ -134,16 +105,17 @@ export function SyncSettings({
     <section className="settings-section sync-section">
       <div className="settings-section-heading">
         <ArrowsClockwise size={20} />
-        <h3>Tabby-Web sync</h3>
+        <h3>Configuration sync</h3>
       </div>
       <fieldset disabled={busy}>
         <Field label="Server URL">
           <input
             type="url"
             value={server}
-            placeholder="https://tabby.example.com"
+            placeholder="https://sync.example.com"
             onChange={(e) => {
               setServer(e.target.value);
+              setEncryption("modern");
               setConfigurations([]);
               setConfigurationId(undefined);
               setStatus("");
@@ -176,7 +148,7 @@ export function SyncSettings({
           <select
             value={configurationId ?? ""}
             onChange={(e) => {
-              setConfigurationId(
+              selectConfiguration(
                 e.target.value ? Number(e.target.value) : undefined,
               );
               setStatus("");
@@ -197,8 +169,29 @@ export function SyncSettings({
           </select>
         </Field>
         <Field
-          label="Tabby vault password"
-          hint="Required for encrypted vaults. Not saved."
+          label="Encryption"
+          hint={
+            encryption === "modern"
+              ? "Encrypts the entire configuration. Upgrades existing vaults on sync. Requires a compatible server and clients."
+              : "Legacy PBKDF2-SHA512 and AES-256-CBC. For Tabby-Web compatibility only; not recommended."
+          }
+        >
+          <select
+            value={encryption}
+            onChange={(e) => {
+              setEncryption(e.target.value === "tabby" ? "tabby" : "modern");
+              setStatus("");
+            }}
+          >
+            <option value="modern">
+              Argon2id + XChaCha20-Poly1305 (recommended)
+            </option>
+            <option value="tabby">Tabby compatibility (legacy)</option>
+          </select>
+        </Field>
+        <Field
+          label="Vault password"
+          hint="Required for modern encryption and existing encrypted vaults. Not saved."
         >
           <input
             type="password"
@@ -209,14 +202,19 @@ export function SyncSettings({
         </Field>
         <p className="helper">
           Sync hosts, private keys, and fingerprint references. Keys require an
-          encrypted Tabby vault. Saved passwords stay in Tabby; SSH asks for
-          them in the terminal. Advanced SSH options, snippets, forwarding
-          rules, and terminal settings remain local.
+          encrypted vault. Saved passwords stay in the vault; SSH asks for them
+          in the terminal. Advanced SSH options, snippets, forwarding rules, and
+          terminal settings remain local.
         </p>
         <button
           type="button"
           className="primary"
-          disabled={!configurationId || !server.trim() || !token.trim()}
+          disabled={
+            !configurationId ||
+            !server.trim() ||
+            !token.trim() ||
+            (encryption === "modern" && !password)
+          }
           onClick={() => {
             void sync();
           }}
@@ -231,7 +229,7 @@ export function SyncSettings({
       </fieldset>
       {busy && (
         <p role="status" className="sync-status">
-          Connecting to Tabby-Web…
+          Connecting to sync server…
         </p>
       )}
       {error && (

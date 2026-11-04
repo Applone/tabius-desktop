@@ -1,15 +1,11 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Workspace } from "./model";
-import { emptyWorkspace } from "./model";
 export const desktop = isTauri();
-export async function loadWorkspace(): Promise<Workspace> {
-  if (desktop) return invoke("load_workspace");
-  const stored = localStorage.getItem("tabius-preview");
-  return stored ? (JSON.parse(stored) as Workspace) : emptyWorkspace();
+export function loadWorkspace(): Promise<Workspace> {
+  return native("load_workspace");
 }
-export async function saveWorkspace(workspace: Workspace): Promise<void> {
-  if (desktop) return invoke("save_workspace", { workspace });
-  localStorage.setItem("tabius-preview", JSON.stringify(workspace));
+export function saveWorkspace(workspace: Workspace): Promise<void> {
+  return native("save_workspace", { workspace });
 }
 export async function native<T>(
   command: string,
@@ -17,7 +13,7 @@ export async function native<T>(
 ): Promise<T> {
   if (!desktop)
     throw new Error(
-      "Open the desktop app to use SSH and local key files. Run cargo run.",
+      "Open the desktop app to use the workspace. Run cargo run.",
     );
   return invoke<T>(command, args);
 }

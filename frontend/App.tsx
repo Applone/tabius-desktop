@@ -30,10 +30,8 @@ import forwardingIcon from "./assets/tabius/port-forwarding.svg";
 import snippetsIcon from "./assets/tabius/snippets.svg";
 import type { Editor } from "./Editors";
 import { EditorModal } from "./Editors";
-import type { Forward, Host, KnownHost, Workspace } from "./model";
-import { defaults, emptyWorkspace, newForward, newHost } from "./model";
+import type { Forward, Host, KnownHost, Snippet, Workspace } from "./model";
 import { SettingsView } from "./Settings";
-import { nativeFingerprints } from "./sync";
 import type { Session } from "./Terminal";
 import { TerminalPane } from "./Terminal";
 import { Empty, Modal } from "./ui";
@@ -53,7 +51,14 @@ const pages = [
   { name: "Known hosts", icon: fingerprintIcon },
 ] as const;
 export function App() {
-  const [workspace, setWorkspace] = useState<Workspace>(emptyWorkspace);
+  const [workspace, setWorkspace] = useState<Workspace>({
+    hosts: [],
+    keys: [],
+    snippets: [],
+    forwards: [],
+    history: [],
+    settings: {} as Workspace["settings"],
+  });
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [page, setPage] = useState<Page>("Hosts");
@@ -74,10 +79,7 @@ export function App() {
   useEffect(() => {
     void loadWorkspace()
       .then((value) => {
-        setWorkspace({
-          ...value,
-          settings: { ...defaults, ...value.settings },
-        });
+        setWorkspace(value);
         setLoaded(true);
       })
       .catch((err) => setLoadError(String(err)));
@@ -104,25 +106,39 @@ export function App() {
   useEffect(() => {
     if (page === "Known hosts") refreshKnown();
   }, [page, refreshKnown]);
-  function connect(host: Host, forward?: Forward) {
-    const session = {
-      id: crypto.randomUUID(),
-      host: {
-        ...host,
-        startup:
-          workspace.snippets.find((s) => s.id === host.startup)?.command ?? "",
-      },
-      forward,
-      fingerprints: (workspace.sync?.fingerprints ?? [])
-        .filter(
-          (f) =>
-            f.host.toLowerCase() === host.address.toLowerCase() &&
-            f.port === host.port,
-        )
-        .map((f) => `${f.type} SHA256:${f.digest.replace(/=+$/, "")}`),
-    };
-    setSessions((items) => [...items, session]);
-    setActive(session.id);
+  async function connect(host: Host, forward?: Forward) {
+    try {
+      const session = await native<Session>("prepare_session", {
+        workspace,
+        host,
+        forward: forward ?? null,
+      });
+      setSessions((items) => [...items, session]);
+      setActive(session.id);
+    } catch (err) {
+      setNotice(String(err));
+    }
+  }
+  async function createEditor(type: "host" | "forward" | "snippet") {
+    try {
+      if (type === "host")
+        setEditor({
+          type,
+          value: await native<Host>("new_item", { kind: type }),
+        });
+      else if (type === "forward")
+        setEditor({
+          type,
+          value: await native<Forward>("new_item", { kind: type }),
+        });
+      else
+        setEditor({
+          type,
+          value: await native<Snippet>("new_item", { kind: type }),
+        });
+    } catch (err) {
+      setNotice(String(err));
+    }
   }
   function remove(
     collection: "hosts" | "keys" | "snippets" | "forwards",
@@ -131,49 +147,33 @@ export function App() {
     setConfirm({
       message: `Delete this ${collection === "keys" ? "key" : collection === "forwards" ? "forwarding rule" : collection.slice(0, -1)}? This cannot be undone.`,
       action: () => {
-        if (collection === "keys") {
-          void native("delete_key", { id })
-            .then(() =>
-              update({
-                ...workspace,
-                keys: workspace.keys.filter((k) => k.id !== id),
-                hosts: workspace.hosts.map((h) =>
-                  h.keyId === id ? { ...h, keyId: "" } : h,
-                ),
-              }),
-            )
-            .catch((err) => setNotice(String(err)));
-        } else if (collection === "hosts")
-          update({
-            ...workspace,
-            hosts: workspace.hosts.filter((h) => h.id !== id),
-            forwards: workspace.forwards.filter((f) => f.hostId !== id),
-          });
-        else
-          update({
-            ...workspace,
-            [collection]: workspace[collection].filter(
-              (item) => item.id !== id,
-            ),
-          });
+        void (async () => {
+          update(
+            await native("remove_item", {
+              workspace,
+              kind:
+                collection === "keys"
+                  ? "key"
+                  : collection === "hosts"
+                    ? "host"
+                    : collection === "forwards"
+                      ? "forward"
+                      : "snippet",
+              item: { id },
+            }),
+          );
+        })().catch((err) => setNotice(String(err)));
       },
     });
   }
   const activeSession = sessions.find((s) => s.id === active);
-  const localFingerprints = nativeFingerprints(known);
-  const syncedKnown = (workspace.sync?.fingerprints ?? [])
-    .filter(
-      (f) =>
-        !localFingerprints.some((k) => k.id === f.id && k.digest === f.digest),
-    )
-    .map((f) => ({
-      line: f.id,
-      host: f.port === 22 ? f.host : `[${f.host}]:${f.port}`,
-      kind: f.type,
-      fingerprint: `SHA256:${f.digest.replace(/=+$/, "")}`,
-      synced: true,
-    }));
-  const displayedKnown = [...known, ...syncedKnown];
+  const [displayedKnown, setDisplayedKnown] = useState<KnownHost[]>([]);
+  useEffect(() => {
+    if (loaded)
+      void native<KnownHost[]>("display_known", { workspace, known })
+        .then(setDisplayedKnown)
+        .catch((err) => setNotice(String(err)));
+  }, [workspace, known, loaded]);
   const counts = [
     workspace.hosts.length,
     workspace.keys.length,
@@ -288,9 +288,7 @@ export function App() {
                     <button
                       type="button"
                       className="primary"
-                      onClick={() =>
-                        setEditor({ type: "host", value: newHost() })
-                      }
+                      onClick={() => createEditor("host")}
                     >
                       <Plus size={17} />
                       New host
@@ -310,9 +308,7 @@ export function App() {
                     <button
                       type="button"
                       className="primary"
-                      onClick={() =>
-                        setEditor({ type: "forward", value: newForward() })
-                      }
+                      onClick={() => createEditor("forward")}
                     >
                       <Plus size={17} />
                       New forwarding
@@ -322,16 +318,7 @@ export function App() {
                     <button
                       type="button"
                       className="primary"
-                      onClick={() =>
-                        setEditor({
-                          type: "snippet",
-                          value: {
-                            id: crypto.randomUUID(),
-                            name: "",
-                            command: "",
-                          },
-                        })
-                      }
+                      onClick={() => createEditor("snippet")}
                     >
                       <Plus size={17} />
                       New snippet
@@ -413,9 +400,7 @@ export function App() {
                         <button
                           type="button"
                           className="primary"
-                          onClick={() =>
-                            setEditor({ type: "host", value: newHost() })
-                          }
+                          onClick={() => createEditor("host")}
                         >
                           <Plus size={17} />
                           Add your first host
@@ -548,9 +533,7 @@ export function App() {
                         <button
                           type="button"
                           className="primary"
-                          onClick={() =>
-                            setEditor({ type: "forward", value: newForward() })
-                          }
+                          onClick={() => createEditor("forward")}
                         >
                           <Plus size={17} />
                           Create a forwarding rule
@@ -610,7 +593,7 @@ export function App() {
                                   setEditor({
                                     type: "snippet",
                                     value: {
-                                      id: crypto.randomUUID(),
+                                      id: "",
                                       name: "",
                                       command: item.command,
                                     },
@@ -688,9 +671,9 @@ export function App() {
                                 onChange={(e) => {
                                   const id = e.target.value;
                                   if (id)
-                                    void native("write_session", {
+                                    void native("run_snippet", {
                                       id,
-                                      data: `${snippet.command}\r`,
+                                      snippetId: snippet.id,
                                     })
                                       .then(() => {
                                         setActive(id);
@@ -724,16 +707,7 @@ export function App() {
                           <button
                             type="button"
                             className="primary"
-                            onClick={() =>
-                              setEditor({
-                                type: "snippet",
-                                value: {
-                                  id: crypto.randomUUID(),
-                                  name: "",
-                                  command: "",
-                                },
-                              })
-                            }
+                            onClick={() => createEditor("snippet")}
                           >
                             <Plus size={17} />
                             Add your first snippet
@@ -771,27 +745,14 @@ export function App() {
                               setConfirm({
                                 message: `Remove trust for ${item.host}? You will be asked to verify this host again.`,
                                 action: () => {
-                                  const ids = item.synced
-                                    ? [item.line]
-                                    : nativeFingerprints([item]).map(
-                                        (f) => f.id,
-                                      );
-                                  if (workspace.sync)
-                                    update({
-                                      ...workspace,
-                                      sync: {
-                                        ...workspace.sync,
-                                        fingerprints:
-                                          workspace.sync.fingerprints.filter(
-                                            (f) => !ids.includes(f.id),
-                                          ),
-                                      },
-                                    });
-                                  if (item.synced) return;
-                                  void native("remove_known_host", {
-                                    line: item.line,
+                                  void native<Workspace>("forget_fingerprint", {
+                                    workspace,
+                                    item,
                                   })
-                                    .then(refreshKnown)
+                                    .then((next) => {
+                                      update(next);
+                                      refreshKnown();
+                                    })
                                     .catch((err) => setNotice(String(err)));
                                 },
                               })
@@ -818,32 +779,12 @@ export function App() {
                     isCurrent={() => workspaceRef.current === workspace}
                     onSyncApply={async (next) => {
                       await saveChain.current;
-                      const removed = (workspace.sync?.knownBaseline ?? [])
-                        .filter(
-                          (previous) =>
-                            !next.sync?.fingerprints.some(
-                              (current) =>
-                                current.id === previous.id &&
-                                current.digest === previous.digest,
-                            ),
-                        )
-                        .map(
-                          (previous) =>
-                            `${previous.id}|${previous.digest.replace(/=+$/, "")}`,
-                        );
-                      if (removed.length)
-                        await native("prune_synced_fingerprints", { removed });
-                      await saveWorkspace(next);
+                      const warnings = await native<string[]>("apply_sync", {
+                        previous: workspace,
+                        workspace: next,
+                      });
                       setWorkspace(next);
-                      for (const key of workspace.keys.filter(
-                        (key) =>
-                          !next.keys.some((current) => current.id === key.id),
-                      ))
-                        await native("delete_key", { id: key.id }).catch(() =>
-                          setNotice(
-                            "Sync saved, but an unused private key file could not be removed.",
-                          ),
-                        );
+                      if (warnings.length) setNotice(warnings.join(" "));
                       refreshKnown();
                     }}
                     onChange={(settings) => update({ ...workspace, settings })}
@@ -867,18 +808,14 @@ export function App() {
                     setActive("library");
                   }}
                   onOS={(id, system) => {
-                    setWorkspace((current) => {
-                      const next = {
-                        ...current,
-                        hosts: current.hosts.map((h) =>
-                          h.id === id ? { ...h, system } : h,
-                        ),
-                      };
-                      saveChain.current = saveChain.current
-                        .then(() => saveWorkspace(next))
-                        .catch((err) => setNotice(String(err)));
-                      return next;
-                    });
+                    void native<Workspace>("edit_workspace", {
+                      workspace: workspaceRef.current,
+                      kind: "os",
+                      item: { id, system },
+                      remove: false,
+                    })
+                      .then(update)
+                      .catch((err) => setNotice(String(err)));
                   }}
                 />
               </div>
