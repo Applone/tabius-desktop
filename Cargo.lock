@@ -3749,6 +3749,7 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "getrandom 0.4.3",
+ "glob",
  "hkdf",
  "nix 0.31.3",
  "pbkdf2",

@@ -142,6 +142,32 @@ repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
 
 Host chaining and the proxy field accept SSH hops, not HTTP/SOCKS proxy commands. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
 
+## Import OpenSSH configuration
+
+Choose **Hosts → Import SSH config**, then **Read configuration** to preview
+`~/.ssh/config`, or enter another configuration path. Review the hosts, key count,
+and warnings, then choose **Import**. Existing hosts are preserved; repeated
+imports skip their aliases, including imported hosts you have renamed.
+
+The importer reads explicit `Host` aliases, `HostName`, `User`, `Port`,
+`ForwardAgent`, `IdentityFile`, and `ProxyJump`. It applies wildcard and negated
+host patterns, first-value defaults, quoted values, comments, and `Include`
+globs in lexical order. Relative includes resolve under `~/.ssh`. Jump aliases
+are expanded into concrete SSH endpoints and cyclic chains are rejected.
+`Match` blocks are skipped without running commands; unsupported options appear
+in the preview. Hosts requiring `ProxyCommand` are skipped. System-wide SSH
+configuration is not imported.
+
+Referenced private keys, or available default identities when no `IdentityFile`
+is specified, are copied into the managed Keychain and deduplicated by public
+fingerprint. The originals remain untouched. Encrypted OpenSSH keys retain their
+encryption and do not require a password to migrate. Other encrypted formats
+require their matching `.pub` file. Keys are eligible for the existing encrypted
+configuration sync; private material stays out of workspace metadata and the
+webview. If multiple keys apply, all are migrated and the first is assigned to
+the host. Jump-host authentication uses the SSH agent or default identity files;
+managed key assignments apply to the destination host.
+
 ## Configuration sync
 
 In **Settings → Configuration sync**, enter an HTTPS server URL and synchronization token, load configurations, select one, choose encryption, and enter its vault password. Then choose **Synchronize**. Tokens and vault passwords stay in memory; only the destination, encryption mode, last-sync date, and merge baselines are persisted.

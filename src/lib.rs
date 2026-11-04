@@ -1,5 +1,6 @@
 mod pty;
 mod ssh;
+mod ssh_config;
 mod storage;
 mod sync;
 mod tabby;
@@ -788,6 +789,8 @@ pub fn run() {
             workspace::edit_workspace,
             remove_item,
             workspace::prepare_session,
+            ssh_config::preview_ssh_config,
+            ssh_config::import_ssh_config,
             tabby::synchronize_workspace,
             tabby::list_configurations,
             tabby::display_known,

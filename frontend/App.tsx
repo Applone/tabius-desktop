@@ -32,6 +32,7 @@ import type { Editor } from "./Editors";
 import { EditorModal } from "./Editors";
 import type { Forward, Host, KnownHost, Snippet, Workspace } from "./model";
 import { SettingsView } from "./Settings";
+import { SSHConfigImport } from "./SSHConfigImport";
 import type { Session } from "./Terminal";
 import { TerminalPane } from "./Terminal";
 import { Empty, Modal } from "./ui";
@@ -63,6 +64,7 @@ export function App() {
   const [loadError, setLoadError] = useState("");
   const [page, setPage] = useState<Page>("Hosts");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [importingSSH, setImportingSSH] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState("library");
   const [notice, setNotice] = useState("");
@@ -285,14 +287,24 @@ export function App() {
                     <h1>{page}</h1>
                   </div>
                   {page === "Hosts" && (
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => createEditor("host")}
-                    >
-                      <Plus size={17} />
-                      New host
-                    </button>
+                    <>
+                      <div className="spacer" />
+                      <button
+                        type="button"
+                        onClick={() => setImportingSSH(true)}
+                      >
+                        <UploadSimple size={17} />
+                        Import SSH config
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => createEditor("host")}
+                      >
+                        <Plus size={17} />
+                        New host
+                      </button>
+                    </>
                   )}
                   {page === "Keychain" && (
                     <button
@@ -847,6 +859,18 @@ export function App() {
             setNotice("Saved.");
           }}
           onKnown={refreshKnown}
+        />
+      )}
+      {importingSSH && (
+        <SSHConfigImport
+          workspace={workspace}
+          onClose={() => setImportingSSH(false)}
+          onPrepare={() => saveChain.current}
+          onSave={(next, message) => {
+            setWorkspace(next);
+            setImportingSSH(false);
+            setNotice(message);
+          }}
         />
       )}
       {confirm && (
