@@ -1,6 +1,6 @@
 # Tabius Desktop
 
-Rust + Tauri 2 SSH client with a React/TypeScript terminal UI, hosts, key management, port forwarding, snippets, known-host fingerprints, and Tabby-Web synchronization.
+A Rust application built with Tauri 2. Rust owns workspace defaults, validation and edits, shell-history import, SSH sessions and reconnects, key management, known-host fingerprints, and Tabby-Web synchronization, including YAML, vault encryption and three-way merging. React/TypeScript and xterm.js handle rendering, forms, terminal display and input, and native-command bindings.
 
 ## Build and run
 
@@ -36,9 +36,10 @@ and is not bundled.
 
 ```text
 Cargo.toml / Cargo.lock   Rust package and locked dependencies
-src/                     Rust backend; build.rs builds the frontend
+src/                     Rust application logic and tests; build.rs builds the UI
 frontend/                React components, terminal UI, and styles
-frontend/tests/          TypeScript unit tests and fixture data
+src/fixtures/            Independent legacy and modern vault fixtures
+docs/sync-encryption.md  Sync server contract and version 2 encryption format
 assets/icons/            Application icon and its SVG source
 tauri.conf.json         Native window, assets, and bundle configuration
 package.json / bun.lock  Internal frontend tooling and locked dependencies
@@ -60,7 +61,6 @@ cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
 bun run check
-bun run test
 uv tool run ruff==0.17.2 check scripts
 uv tool run ruff==0.17.2 format --check scripts
 bash -n scripts/test-linux-package.sh
@@ -69,7 +69,7 @@ actionlint
 desktop-file-validate packaging/linux/dev.tabius.desktop.desktop
 ```
 
-The frontend commands run strict TypeScript checking and Biome lint/format checks and the frontend unit tests. Dependencies are prepared by `cargo build`, or can be installed independently with `bun install --frozen-lockfile`. `bun run dev` is an optional browser-only preview; SSH and key operations require the native app.
+The frontend check runs strict TypeScript checking and Biome lint/format checks. Application regression tests, including the migrated workspace and sync suites, run with Cargo. Dependencies are prepared by `cargo build`, or can be installed independently with `bun install --frozen-lockfile`. `bun run dev` serves UI assets for frontend development. Workspace operations require the Rust desktop backend; there is no separate browser workspace or localStorage persistence.
 
 Builds require the locked dependencies to be cached or the package registries to be reachable. With cached dependencies, Cargo's `--offline` option also works. Generated `target/`, `dist/`, `gen/`, and `node_modules/` directories are excluded from version control.
 
@@ -142,15 +142,21 @@ repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
 
 Host chaining and the proxy field accept SSH hops, not HTTP/SOCKS proxy commands. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
 
-## Tabby-Web sync
+## Configuration sync
 
-In **Settings → Tabby-Web sync**, enter an HTTPS server URL and synchronization token, load configurations, select one, and enter its vault password if encrypted. Then choose **Synchronize**. Tokens and vault passwords stay in memory; only the destination, last-sync date, and merge baselines are persisted.
+In **Settings → Configuration sync**, enter an HTTPS server URL and synchronization token, load configurations, select one, choose encryption, and enter its vault password. Then choose **Synchronize**. Tokens and vault passwords stay in memory; only the destination, encryption mode, last-sync date, and merge baselines are persisted.
 
 The protocol matches the iOS project: Bearer-authenticated `GET /api/1/configs`, `GET /api/1/configs/{id}`, and `PATCH /api/1/configs/{id}`. Redirects are rejected. Three-way merging propagates deletions and independent edits, and blocks conflicting edits before upload. A second read checks for concurrent changes; If-Match is sent when an ETag is available. Servers without conditional writes can still race between that read and PATCH.
 
-Sync includes host names/endpoints/users/key assignments, private keys, and fingerprint references. It preserves unrelated profiles, templates, options, vault files, and password secrets. Keys require a Tabby encrypted vault; both whole-configuration encryption and secrets-only vaults are supported. Encryption uses [Tabby's version 1 format](https://github.com/Eugeny/tabby/wiki/Vault-Encryption): AES-256-CBC with PBKDF2-SHA512, 100,000 iterations, an eight-byte salt, and a 16-byte IV. Key baselines contain hashes rather than private-key material. The unit suite uses the same independent encrypted fixture as the iOS client.
+Sync includes host names/endpoints/users/key assignments, private keys, and fingerprint references. It preserves unrelated profiles, templates, options, vault files, and password secrets. Key baselines contain hashes rather than private-key material.
 
-Advanced SSH options, snippets, forwarding rules, history, and terminal settings remain local. Imported jump-host references resolve to SSH chains; missing references and cycles block import. Unsupported proxy profiles block sync. Saved passwords remain in Tabby and are entered interactively here.
+**Modern encryption (recommended)** is the default for new connections: Argon2id v19 (64 MiB, three passes, four lanes), HKDF-SHA256 with a vault-specific context, and XChaCha20-Poly1305 authenticated encryption. It encrypts the whole configuration and creates a vault if needed. Selecting modern mode upgrades plaintext or legacy vaults on the next successful sync. Version 2 requires compatible clients; existing Tabby clients cannot decrypt it. Modern vaults cannot be downgraded through compatibility mode, and a previously modern destination returning legacy or plaintext content blocks sync.
+
+**Tabby compatibility (legacy, not recommended)** retains [Tabby's version 1 format](https://github.com/Eugeny/tabby/wiki/Vault-Encryption): AES-256-CBC with PBKDF2-HMAC-SHA512, 100,000 iterations, an eight-byte salt, and a 16-byte IV. Existing saved connections without a mode retain compatibility behavior. Both whole-configuration and secrets-only legacy vaults remain supported; private keys require an existing encrypted vault in this mode.
+
+The [server contract and encryption specification](docs/sync-encryption.md) describe how a lightweight server can store opaque configuration content without holding encryption keys. Tests cover an independent libsodium-based version 2 fixture and the existing iOS version 1 compatibility fixture.
+
+Advanced SSH options, snippets, forwarding rules, history, and terminal settings remain local. Imported jump-host references resolve to SSH chains; missing references and cycles block import. Unsupported proxy profiles block sync. Saved passwords remain in the remote vault and are entered interactively here.
 
 Synced fingerprints are references, not automatically trusted keys. They appear in Known hosts and before the SSH prompt for comparison. Changes or deletions revoke matching previous local trust entries after successful upload; accepting a new key still requires confirmation.
 
@@ -168,6 +174,6 @@ On Windows, the application directory and keys directory use a protected DACL
 granting full access only to the current user's SID; new files inherit that
 restriction. Unix files continue to use `0600` and directories `0700`.
 
-Passwords and session passphrases are not saved. Scripts, environment variables, and imported history are plaintext workspace data; review history for secrets. Browser preview stores metadata in localStorage and cannot connect to servers or manage private keys.
+Passwords and session passphrases are not saved. Scripts, environment variables, and imported history are plaintext workspace data; review history for secrets. The webview does not persist a separate browser workspace.
 
 Live SSH sessions, a live Tabby-Web account, release packaging, and non-Linux platforms require separate runtime validation; unit tests do not establish those claims.
