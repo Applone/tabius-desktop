@@ -875,15 +875,18 @@ fieldset.field {
   bottom: 8px;
 }
 .graphite {
-  background: #141819;
+  --terminal-background: var(--bg);
+  background: var(--terminal-background);
   color: #d4dedb;
 }
 .midnight {
-  background: #151a28;
+  --terminal-background: #151a28;
+  background: var(--terminal-background);
   color: #d5deef;
 }
 .paper {
-  background: #f5f2eb;
+  --terminal-background: #f5f2eb;
+  background: var(--terminal-background);
   color: #313b36;
 }
 .theme-option:hover {
@@ -893,16 +896,12 @@ fieldset.field {
   border-color: var(--accent-hover);
 }
 button.graphite:hover,
-button.graphite:active {
-  background: #141819;
-}
+button.graphite:active,
 button.midnight:hover,
-button.midnight:active {
-  background: #151a28;
-}
+button.midnight:active,
 button.paper:hover,
 button.paper:active {
-  background: #f5f2eb;
+  background: var(--terminal-background);
 }
 .terminal-preview {
   padding: 16px 14px;
@@ -1215,6 +1214,7 @@ button.paper:active {
   flex: 1;
   min-height: 0;
   padding: 16px;
+  background: var(--terminal-background, var(--bg));
 }
 .sync-section fieldset > button {
   margin-bottom: 20px;

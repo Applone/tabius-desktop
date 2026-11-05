@@ -171,6 +171,9 @@ export function EditorModal({
                 <div className="form-columns">
                   <Field label="Username">
                     <input
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       value={host.username}
                       onChange={(e) => setH("username", e.target.value)}
                       placeholder="System default"

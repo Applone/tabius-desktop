@@ -48,7 +48,7 @@ export function TerminalPane({
       fontFamily: settingsRef.current.font,
       fontSize: settingsRef.current.fontSize,
       lineHeight: settingsRef.current.lineHeight,
-      theme: terminalTheme(settingsRef.current),
+      theme: terminalTheme(settingsRef.current, container.current),
     });
     terminalRef.current = term;
     const fit = new FitAddon();
@@ -147,13 +147,13 @@ export function TerminalPane({
     };
   }, [session, attempt]);
   useEffect(() => {
-    if (terminalRef.current) {
+    if (terminalRef.current && container.current) {
       const options = terminalRef.current.options;
       options.fontSize = settings.fontSize;
       options.fontFamily = settings.font;
       options.lineHeight = settings.lineHeight;
       options.macOptionIsMeta = settings.optionAsMeta;
-      options.theme = terminalTheme(settings);
+      options.theme = terminalTheme(settings, container.current);
       const frame = requestAnimationFrame(() => fitRef.current?.fit());
       return () => cancelAnimationFrame(frame);
     }
@@ -189,29 +189,29 @@ export function TerminalPane({
         </button>
       </div>
       {error && <div className="inline-error">{error}</div>}
-      <div className="terminal-surface" ref={container} />
+      <div
+        className={`terminal-surface ${settings.theme.toLowerCase()}`}
+        ref={container}
+      />
     </div>
   );
 }
-function terminalTheme(settings: Settings) {
-  const themes: Record<
-    string,
-    { background: string; foreground: string; cursor: string }
-  > = {
+function terminalTheme(settings: Settings, surface: HTMLElement) {
+  const themes: Record<string, { foreground: string; cursor: string }> = {
     Graphite: {
-      background: "#141819",
       foreground: "#d4dedb",
       cursor: "#84d5b3",
     },
     Midnight: {
-      background: "#151a28",
       foreground: "#d5deef",
       cursor: "#8cb9ff",
     },
-    Paper: { background: "#f5f2eb", foreground: "#313b36", cursor: "#2d735b" },
+    Paper: { foreground: "#313b36", cursor: "#2d735b" },
   };
   return {
     ...themes[settings.theme],
+    // Match the canvas to its CSS surface, including padding and theme previews.
+    background: getComputedStyle(surface).backgroundColor,
     ...(settings.highlighting
       ? {
           red: "#e68a89",
