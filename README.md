@@ -32,6 +32,10 @@ feature; the NSIS installer offers WebView2 installation when needed. Mosh
 connections require `mosh` locally and `mosh-server` remotely; Mosh is optional
 and is not bundled.
 
+On Windows, the app and tests use `ssh.exe` and `ssh-keygen.exe` from
+`%SystemRoot%\System32\OpenSSH`, so Git Bash's bundled SSH does not override
+the native client. Linux and macOS resolve these programs through `PATH`.
+
 ## Layout
 
 ```text

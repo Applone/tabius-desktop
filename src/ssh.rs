@@ -1,5 +1,29 @@
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+pub fn program(name: &str) -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    {
+        // Git Bash prepends its MSYS tools to PATH. Those tools interpret native
+        // Windows paths differently, so use the required Windows OpenSSH Client.
+        let root = std::env::var_os("SystemRoot").ok_or("SystemRoot is not set.")?;
+        let program = PathBuf::from(root)
+            .join("System32")
+            .join("OpenSSH")
+            .join(format!("{name}.exe"));
+        if !program.is_file() {
+            return Err(format!(
+                "Windows OpenSSH Client is required: {} was not found. Enable the OpenSSH Client optional feature.",
+                program.display()
+            ));
+        }
+        Ok(program)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(PathBuf::from(name))
+    }
+}
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

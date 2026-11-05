@@ -111,14 +111,19 @@ fn start_session(
     let directory = data_dir(&app)?;
     let arguments = ssh::args(&host, &settings, forward.as_ref(), &directory)?;
     let mosh = host.mosh && forward.is_none();
-    let mut cmd = Command::new(if mosh { "mosh" } else { "ssh" });
+    let ssh_program = ssh::program("ssh")?;
+    let mut cmd = Command::new(if mosh {
+        Path::new("mosh")
+    } else {
+        &ssh_program
+    });
     if mosh {
         // Mosh's --ssh option is shell parsed. Quote every argument and keep the destination separate.
         let position = arguments
             .iter()
             .position(|a| a == "--")
             .ok_or("Missing destination.")?;
-        let ssh_command = std::iter::once("ssh".to_string())
+        let ssh_command = std::iter::once(ssh_program.to_string_lossy().replace('\\', "/"))
             .chain(
                 arguments[..position]
                     .iter()
@@ -388,7 +393,7 @@ fn generate_private_key(path: &Path, name: &str, kind: &str, passphrase: &str) -
                 .into(),
         );
     }
-    let mut command = Command::new("ssh-keygen");
+    let mut command = Command::new(ssh::program("ssh-keygen")?);
     command
         .args(["-q", "-t", kind, "-a", "100", "-C", name, "-f"])
         .arg(path);
@@ -465,7 +470,7 @@ async fn import_key(
         let id=Uuid::new_v4().to_string();let path=data_dir(&app)?.join("keys").join(&id);
         private_write(&path,format!("{}\n",content.trim()).as_bytes())?;
         let result=(||{
-            let public=if public_key.trim().is_empty(){let output=Command::new("ssh-keygen").args(["-y","-P","","-f"]).arg(&path).output().map_err(|e|e.to_string())?;if !output.status.success(){return Err("Cannot read private key. For an encrypted key, supply its matching public key.".into());}String::from_utf8_lossy(&output.stdout).into_owned()}else{public_key};
+            let public=if public_key.trim().is_empty(){let output=Command::new(ssh::program("ssh-keygen")?).args(["-y","-P","","-f"]).arg(&path).output().map_err(|e|e.to_string())?;if !output.status.success(){return Err("Cannot read private key. For an encrypted key, supply its matching public key.".into());}String::from_utf8_lossy(&output.stdout).into_owned()}else{public_key};
             public_fingerprint(&public)?;private_write(&path.with_extension("pub"),public.as_bytes())?;key_entry(&path,id,name)
         })();
         if result.is_err(){let _=fs::remove_file(&path);let _=fs::remove_file(path.with_extension("pub"));}result
@@ -540,7 +545,7 @@ fn derive_sync_public(path: &Path, content: &str, passphrase: &str) -> Result<St
     if passphrase.len() > 1024 || passphrase.chars().any(char::is_control) {
         return Err("Invalid key passphrase.".into());
     }
-    let mut command = Command::new("ssh-keygen");
+    let mut command = Command::new(ssh::program("ssh-keygen")?);
     command.args(["-y", "-f"]).arg(path);
     let mut process = pty::spawn(&mut command, 24, 80)?;
     let mut output = String::new();
@@ -857,7 +862,7 @@ mod tests {
             private_write(&imported, &content).unwrap();
             assert!(private_write(&imported, b"replacement").is_err());
             assert_eq!(fs::read(&imported).unwrap(), content);
-            let output = Command::new("ssh-keygen")
+            let output = Command::new(ssh::program("ssh-keygen").unwrap())
                 .args(["-y", "-P", "", "-f"])
                 .arg(&imported)
                 .output()

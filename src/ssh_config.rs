@@ -404,7 +404,7 @@ fn read_key(path: &Path) -> Result<(Zeroizing<String>, String)> {
         }
         public
     } else {
-        let output = std::process::Command::new("ssh-keygen")
+        let output = std::process::Command::new(crate::ssh::program("ssh-keygen")?)
             .args(["-y", "-P", "", "-f"])
             .arg(path)
             .stdin(std::process::Stdio::null())
@@ -732,7 +732,7 @@ mod tests {
     }
 
     fn generate_key(path: &Path, password: &str) {
-        let output = std::process::Command::new("ssh-keygen")
+        let output = std::process::Command::new(crate::ssh::program("ssh-keygen").unwrap())
             .args(["-q", "-t", "ed25519", "-a", "1", "-N", password, "-f"])
             .arg(path)
             .stdin(std::process::Stdio::null())
@@ -773,39 +773,70 @@ mod tests {
             let home = configuration(
                 "Include conf.d/*.conf\nHost a* !alternate\n Port 2200\nHost alpha alternate\n HostName server.example.com\n ForwardAgent yes\nHost *\n Port 2222\n User fallback\n",
             );
-            fs::create_dir(home.path().join(".ssh/conf.d")).unwrap();
-            fs::write(
-                home.path().join(".ssh/conf.d/hosts.conf"),
-                "Host alpha\n User alice\n",
-            )
-            .unwrap();
+            let includes = home.path().join(".ssh/config files");
+            fs::create_dir(&includes).unwrap();
+            fs::write(includes.join("hosts.conf"), "Host alpha\n User alice\n").unwrap();
             // ssh -F still resolves relative includes under the real user's home.
-            // Use an absolute fixture path so the comparison stays isolated.
+            // Use an absolute, quoted path with forward slashes for SSH's glob syntax.
+            let pattern = includes
+                .join("*.conf")
+                .to_str()
+                .unwrap()
+                .replace(std::path::MAIN_SEPARATOR, "/");
             let path = home.path().join(".ssh/config");
-            let content = fs::read_to_string(&path).unwrap().replace(
-                "conf.d/*.conf",
-                &format!("\"{}/conf.d/*.conf\"", home.path().join(".ssh").display()),
-            );
+            let content = fs::read_to_string(&path)
+                .unwrap()
+                .replace("conf.d/*.conf", &format!("\"{pattern}\""));
             fs::write(&path, content).unwrap();
             let planned = preview(home.path());
+            assert_eq!(planned.preview.hosts.len(), 2);
             for host in &planned.preview.hosts {
-                let output = std::process::Command::new("ssh")
-                    .args(["-G", "-F"])
+                let alias = workspace::text(&host["name"]);
+                let output = std::process::Command::new(crate::ssh::program("ssh").unwrap())
+                    .args(["-vvv", "-G", "-F"])
                     .arg(home.path().join(".ssh/config"))
-                    .arg(workspace::text(&host["name"]))
+                    .arg(alias)
                     .stdin(std::process::Stdio::null())
                     .output()
                     .unwrap();
-                assert!(output.status.success(), "ssh -G failed");
+                let diagnostics = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    output.status.success(),
+                    "ssh -G failed for {alias}: {diagnostics}"
+                );
+                #[cfg(windows)]
+                assert!(
+                    diagnostics.contains("OpenSSH_for_Windows"),
+                    "Expected native Windows OpenSSH, not an MSYS client: {diagnostics}"
+                );
                 let output = String::from_utf8(output.stdout).unwrap();
                 let options: BTreeMap<_, _> = output
                     .lines()
                     .filter_map(|line| line.split_once(' '))
                     .collect();
-                assert_eq!(host["address"], options["hostname"]);
-                assert_eq!(host["username"], options["user"]);
-                assert_eq!(host["port"], options["port"].parse::<u16>().unwrap());
-                assert_eq!(host["agentForwarding"], options["forwardagent"] == "yes");
+                assert_eq!(
+                    host["username"],
+                    if alias == "alpha" {
+                        "alice"
+                    } else {
+                        "fallback"
+                    }
+                );
+                assert_eq!(
+                    host["address"], options["hostname"],
+                    "{alias}: {diagnostics}"
+                );
+                assert_eq!(host["username"], options["user"], "{alias}: {diagnostics}");
+                assert_eq!(
+                    host["port"],
+                    options["port"].parse::<u16>().unwrap(),
+                    "{alias}: {diagnostics}"
+                );
+                assert_eq!(
+                    host["agentForwarding"],
+                    options["forwardagent"] == "yes",
+                    "{alias}: {diagnostics}"
+                );
             }
         });
     }
@@ -1014,7 +1045,7 @@ mod tests {
         crate::pty::test_with_timeout(|| {
             let home = configuration("Host pem\n IdentityFile ~/.ssh/key.pem\n");
             let path = home.path().join(".ssh/key.pem");
-            let output = std::process::Command::new("ssh-keygen")
+            let output = std::process::Command::new(crate::ssh::program("ssh-keygen").unwrap())
                 .args([
                     "-q",
                     "-t",
