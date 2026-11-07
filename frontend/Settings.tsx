@@ -4,6 +4,7 @@ import {
   ShieldCheck,
   Terminal,
 } from "@phosphor-icons/react";
+import { MigrationSettings } from "./MigrationSettings";
 import type { Settings, Workspace } from "./model";
 import { SyncSettings } from "./SyncSettings";
 import { Field, Toggle } from "./ui";
@@ -129,11 +130,13 @@ export function SettingsView({
       </div>
       <div>
         <SyncSettings
+          disabled={syncing}
           workspace={workspace}
           onApply={onSyncApply}
           onBusy={onSyncBusy}
           isCurrent={isCurrent}
         />
+        <MigrationSettings disabled={syncing} onBusy={onSyncBusy} />
         <div className="settings-section" inert={syncing}>
           <div className="settings-section-heading">
             <GearSix size={20} />

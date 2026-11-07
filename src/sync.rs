@@ -9,7 +9,7 @@ pub struct Response {
     pub body: Value,
     pub etag: Option<String>,
 }
-fn endpoint(server: &str, id: Option<u64>) -> Result<Url, String> {
+pub(crate) fn endpoint(server: &str, id: Option<u64>) -> Result<Url, String> {
     let mut url = Url::parse(server).map_err(|_| "Enter an HTTPS sync server URL.")?;
     if url.scheme() != "https"
         || url.host_str().is_none()

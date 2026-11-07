@@ -190,6 +190,41 @@ Advanced SSH options, snippets, forwarding rules, history, and terminal settings
 
 Synced fingerprints are references, not automatically trusted keys. They appear in Known hosts and before the SSH prompt for comparison. Changes or deletions revoke matching previous local trust entries after successful upload; accepting a new key still requires confirmation.
 
+## Migrate from a legacy Tabby-Web server
+
+In **Settings → Migrate from Tabby-Web**, enter the legacy **Tabby-Web server**
+and new **Tabius sync server** HTTPS URLs and their separate synchronization
+tokens. Load each server's configurations and select the source and destination.
+Create a configuration on the Tabius server first if it has none. Enter the old
+Tabby-Web vault password when encrypted, and choose a password for the new
+Tabius vault. Choose **Preview migration**,
+review the counts and destination, then choose **Migrate and replace destination**
+(or **Migrate to Tabius** for an empty destination).
+
+The desktop decrypts the legacy vault locally, then encrypts the complete copy
+with Argon2id, HKDF-SHA256, and XChaCha20-Poly1305 before uploading it to Tabius.
+Migration replaces the selected destination configuration. It preserves all
+profiles, templates, private-key files, saved passwords, passphrases, fingerprints, and
+unrelated configuration and vault fields. Plaintext configurations and both
+legacy vault forms are supported. The source configuration and local workspace
+remain unchanged. Tokens and passwords are not persisted. Legacy Tabby clients
+cannot read the destination's version 2 vault.
+
+Both configurations are checked against the preview and read again before
+upload. Changes stop migration; the destination's ETag is sent with the write
+when available. After uploading, the desktop reads the destination back and
+checks that it retained the exact encrypted copy before reporting success.
+Servers without conditional writes still have a race between the final read and
+upload. After migration, use **Configuration sync** to connect
+to the destination with its token and the new vault password. The desktop still
+prompts interactively for SSH passwords; saved passwords are preserved in the
+remote vault for compatible clients.
+
+The [Tabius sync server](https://github.com/Applone/tabius-sync) implements the same
+HTTP API as Tabby-Web. Its SQLCipher database password is separate from both the
+sync token and the client-side vault password entered here. The server never
+receives either vault password; it stores the encrypted copy unchanged.
+
 ## Storage and transport
 
 Rust runs the installed OpenSSH client in a controlling PTY and streams bytes to xterm.js over Tauri IPC. Session resizes reach the PTY; closing sessions or exiting the app terminates Unix process groups or the Windows process tree. The main connection ignores the user's SSH config so UI preferences are deterministic. Without a selected managed key, OpenSSH can use its agent and default identity paths. Jump hosts may use the system trust file.

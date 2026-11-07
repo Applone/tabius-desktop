@@ -1083,7 +1083,8 @@ button.paper:active {
   padding-top: 24px;
   border-top: 1px solid var(--border);
 }
-.form-section h3 {
+.form-section h3,
+.form-section h4 {
   margin-bottom: 18px;
   color: var(--secondary);
   font-size: 12px;
@@ -1218,6 +1219,9 @@ button.paper:active {
 }
 .sync-section fieldset > button {
   margin-bottom: 20px;
+}
+.migration-section .form-section > button {
+  margin-bottom: 18px;
 }
 .sync-status {
   margin-top: 14px;

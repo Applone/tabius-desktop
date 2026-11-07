@@ -1,3 +1,4 @@
+mod migration;
 mod pty;
 mod ssh;
 mod ssh_config;
@@ -797,6 +798,7 @@ pub fn run() {
             ssh_config::preview_ssh_config,
             ssh_config::import_ssh_config,
             tabby::synchronize_workspace,
+            migration::migrate_configuration,
             tabby::list_configurations,
             tabby::display_known,
             tabby::forget_fingerprint,

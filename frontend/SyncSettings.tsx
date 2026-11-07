@@ -9,11 +9,13 @@ import type { Workspace } from "./model";
 import type { RemoteConfiguration } from "./sync";
 import { Field } from "./ui";
 export function SyncSettings({
+  disabled,
   workspace,
   onApply,
   onBusy,
   isCurrent,
 }: {
+  disabled: boolean;
   workspace: Workspace;
   onApply: (workspace: Workspace) => Promise<void>;
   onBusy: (busy: boolean) => void;
@@ -107,7 +109,7 @@ export function SyncSettings({
         <ArrowsClockwise size={20} />
         <h3>Configuration sync</h3>
       </div>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || disabled}>
         <Field label="Server URL">
           <input
             type="url"

@@ -112,3 +112,35 @@ setting use compatibility mode; new destinations default to modern.
 
 Choose modern mode only when all clients sharing that configuration understand
 version 2. The server can store either format without decrypting it.
+
+### Migration between servers
+
+**Settings → Migrate from Tabby-Web** transfers a selected configuration from a
+legacy Tabby-Web server to a Tabius sync server using their separate tokens.
+Both servers use the HTTP contract above;
+the destination configuration must already exist. Migration reads and decrypts
+the source and serializes the complete document with modern encryption and a
+separate destination vault password. It preserves all configuration and vault
+fields, including secrets unsupported by the desktop workspace. It never
+projects the data through the local host/key model or writes to the source.
+
+The preview returns only counts and a SHA-256 fingerprint binding the canonical
+source and destination endpoints to their content, modification timestamps, and
+ETags. Migration requires this fingerprint, rejects changed snapshots, and reads
+both configurations again after encryption and before the destination PATCH.
+The PATCH includes the destination's ETag when available. Conditional writes
+are still required to close the final read/write race on the destination. The
+source can change after its final read; migration copies the reviewed snapshot.
+Canonical endpoint equality is rejected to prevent replacing the source itself;
+different URLs that alias the same server/configuration cannot be detected.
+
+After PATCH succeeds, the client fetches the destination again and compares the
+SHA-256 digest of its content with the encrypted content it uploaded. Only an
+exact match reports migration success. An unavailable or mismatched read-back
+reports that the upload finished but verification failed; the source remains
+untouched. This verification does not prevent later edits by other clients.
+
+The user explicitly reviews replacement of the destination's existing content.
+Migration does not merge destination data, create server configurations, or
+change the desktop workspace or its sync baselines. Subsequent synchronization
+with the destination follows the usual workspace merge rules.
