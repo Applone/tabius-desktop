@@ -698,9 +698,11 @@ pub async fn import_ssh_config(
         }
         let previous = workspace.clone();
         let plan = plan(workspace, &path, &home)?;
+        let scratch = crate::local::scratch()?;
+        let key_ids: Vec<_> = plan.keys.iter().map(|key| key.id.clone()).collect();
         apply(
             plan,
-            &crate::data_dir(&app)?.join("keys"),
+            &scratch.path().join("keys"),
             &fingerprint,
             |workspace| {
                 if crate::load_workspace(app.clone())? != previous {
@@ -708,7 +710,21 @@ pub async fn import_ssh_config(
                         "The workspace changed during import. Read the configuration again.".into(),
                     );
                 }
-                crate::save_workspace(app.clone(), workspace.clone())
+                let mut created = Vec::new();
+                let saved = (|| {
+                    for id in &key_ids {
+                        crate::persist_key(&app, &scratch.path().join("keys").join(id), id)?;
+                        created.push(id.clone());
+                    }
+                    crate::save_workspace(app.clone(), workspace.clone())
+                })();
+                if let Err(error) = saved {
+                    for id in created {
+                        let _ = crate::delete_key(app.clone(), id);
+                    }
+                    return Err(error);
+                }
+                Ok(())
             },
         )
     })

@@ -37,15 +37,14 @@ chacha20poly1305 = { version = "0.11", default-features = false, features = ["al
 hkdf = "0.13"
 zeroize = "1"
 glob = "0.3"
+keyring = "4.2.0"
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["process", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization"] }
-
-[dev-dependencies]
-tempfile = "3"
 
 [lints.clippy]
 all = "deny"

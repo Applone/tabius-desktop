@@ -757,6 +757,40 @@ pre,
   gap: 20px;
   max-width: 1080px;
 }
+.storage-gate {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 32px;
+}
+.storage-panel {
+  width: min(100%, 520px);
+  padding: 32px;
+}
+.storage-panel h1 {
+  margin: 16px 0;
+  font-size: 25px;
+}
+.storage-panel p {
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+.storage-note {
+  color: var(--secondary);
+  font-size: 12px;
+}
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.storage-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
 .settings-layout > div {
   min-width: 0;
 }

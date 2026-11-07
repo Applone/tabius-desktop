@@ -1,3 +1,4 @@
+mod local;
 mod migration;
 mod pty;
 mod ssh;
@@ -34,11 +35,9 @@ struct Session {
 }
 #[derive(Default, Clone)]
 struct Sessions(Arc<Mutex<HashMap<String, Session>>>);
+static TRUST: Mutex<()> = Mutex::new(());
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
-    let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    storage::directory(&path)?;
-    storage::directory(&path.join("keys"))?;
-    Ok(path)
+    local::directory(app)
 }
 fn private_write(path: &Path, content: &[u8]) -> Result<()> {
     let mut file = storage::options()
@@ -53,8 +52,7 @@ fn private_write(path: &Path, content: &[u8]) -> Result<()> {
 fn load_workspace(app: tauri::AppHandle) -> Result<Value> {
     let path = data_dir(&app)?.join("workspace.json");
     let mut value = if path.exists() {
-        serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?
+        serde_json::from_slice(&local::read(&app, &path)?).map_err(|e| e.to_string())?
     } else {
         workspace::empty()
     };
@@ -80,13 +78,7 @@ fn save_workspace(app: tauri::AppHandle, workspace: Value) -> Result<()> {
         return Err("Workspace exceeds 5 MB.".into());
     }
     let dir = data_dir(&app)?;
-    let temp = dir.join(format!("workspace-{}.tmp", Uuid::new_v4()));
-    private_write(&temp, &bytes)?;
-    let result = fs::rename(&temp, dir.join("workspace.json")).map_err(|e| e.to_string());
-    if result.is_err() {
-        let _ = fs::remove_file(temp);
-    }
-    result
+    local::write(&app, &dir.join("workspace.json"), &bytes)
 }
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -109,8 +101,10 @@ fn start_session(
     on_output: Channel<Output>,
 ) -> Result<String> {
     ssh::valid_id(&id)?;
-    let directory = data_dir(&app)?;
-    let arguments = ssh::args(&host, &settings, forward.as_ref(), &directory)?;
+    let scratch = local::scratch()?;
+    let session_directory = scratch.path();
+    let mut initial_known = local::stage_session(&app, session_directory, &host.key_id)?;
+    let arguments = ssh::args(&host, &settings, forward.as_ref(), session_directory)?;
     let mosh = host.mosh && forward.is_none();
     let ssh_program = ssh::program("ssh")?;
     let mut cmd = Command::new(if mosh {
@@ -169,12 +163,18 @@ fn start_session(
     let thread_id = id.clone();
     let mut child = process.child;
     std::thread::spawn(move || {
+        let session_files = scratch;
         loop {
             let mut buffer = [0; 16384];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(n) => {
+                        if let Err(error) =
+                            merge_session_trust(&app, session_files.path(), &mut initial_known)
+                        {
+                            let _ = on_output.send(Output::Status { status: error });
+                        }
                         if on_output
                             .send(Output::Data {
                                 data: buffer[..n].to_vec(),
@@ -195,6 +195,10 @@ fn start_session(
                 .ok()
                 .map(|s| s.exit_code() as i32)
                 .unwrap_or(-1);
+            if let Err(error) = merge_session_trust(&app, session_files.path(), &mut initial_known)
+            {
+                let _ = on_output.send(Output::Status { status: error });
+            }
             let reconnect = code == 255
                 && load_workspace(app.clone())
                     .is_ok_and(|w| w["settings"]["autoReconnect"] == true);
@@ -234,10 +238,17 @@ fn start_session(
                 return;
             }
             let (rows, cols) = (session.rows, session.cols);
-            match pty::spawn(&mut cmd, rows, cols).and_then(|process| {
-                let reader = process.master.try_clone().map_err(|e| e.to_string())?;
-                Ok((process, reader))
-            }) {
+            // Re-read trust and keys so reconnect cannot reuse revoked credentials.
+            let attempt = local::stage_session(&app, session_files.path(), &host.key_id)
+                .and_then(|known| {
+                    initial_known = known;
+                    pty::spawn(&mut cmd, rows, cols)
+                })
+                .and_then(|process| {
+                    let reader = process.master.try_clone().map_err(|e| e.to_string())?;
+                    Ok((process, reader))
+                });
+            match attempt {
                 Ok((process, next_reader)) => {
                     pid = process.child.id();
                     child = process.child;
@@ -248,7 +259,8 @@ fn start_session(
                         status: "Running".into(),
                     });
                 }
-                Err(_) => {
+                Err(error) => {
+                    let _ = on_output.send(Output::Status { status: error });
                     map.remove(&thread_id);
                     let _ = on_output.send(Output::Exit { code: -1 });
                     break;
@@ -387,6 +399,51 @@ fn key_entry(path: &Path, id: String, name: String) -> Result<KeyEntry> {
         fingerprint,
     })
 }
+fn persist_key(app: &tauri::AppHandle, source: &Path, id: &str) -> Result<()> {
+    ssh::valid_id(id)?;
+    let destination = data_dir(app)?.join("keys").join(id);
+    if destination.exists() || destination.with_extension("pub").exists() {
+        return Err("A key with this identifier already exists.".into());
+    }
+    let public = fs::read(source.with_extension("pub")).map_err(|e| e.to_string())?;
+    let secret = zeroize::Zeroizing::new(fs::read(source).map_err(|e| e.to_string())?);
+    // Publish the private file last so a failed write cannot leave a usable partial key.
+    local::write(app, &destination.with_extension("pub"), &public)?;
+    if let Err(error) = local::write(app, &destination, &secret) {
+        let _ = fs::remove_file(destination.with_extension("pub"));
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn merge_session_trust(app: &tauri::AppHandle, scratch: &Path, initial: &mut String) -> Result<()> {
+    let content = fs::read_to_string(scratch.join("known_hosts")).map_err(|e| e.to_string())?;
+    let added: Vec<_> = content
+        .lines()
+        .filter(|line| !initial.lines().any(|old| old == *line))
+        .collect();
+    if added.is_empty() {
+        return Ok(());
+    }
+    let path = data_dir(app)?.join("known_hosts");
+    // Serialize trust merges independently of file encryption to avoid lost session updates.
+    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
+    let mut current = if path.exists() {
+        local::text(app, &path)?
+    } else {
+        String::new()
+    };
+    for line in added {
+        parse_known(line)?;
+        if !current.lines().any(|old| old == line) {
+            current.push('\n');
+            current.push_str(line);
+        }
+    }
+    local::write(app, &path, current.as_bytes())?;
+    *initial = content;
+    Ok(())
+}
 fn generate_private_key(path: &Path, name: &str, kind: &str, passphrase: &str) -> Result<()> {
     if passphrase.len() > 1024 || passphrase.chars().any(char::is_control) {
         return Err(
@@ -452,9 +509,12 @@ async fn generate_key(
             return Err("Choose Ed25519 or RSA.".into());
         }
         let id = Uuid::new_v4().to_string();
-        let path = data_dir(&app)?.join("keys").join(&id);
+        let scratch = local::scratch()?;
+        let path = scratch.path().join("keys").join(&id);
         generate_private_key(&path, &name, &kind, &passphrase)?;
-        key_entry(&path, id, name)
+        let entry = key_entry(&path, id, name)?;
+        persist_key(&app, &path, &entry.id)?;
+        Ok(entry)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -468,11 +528,11 @@ async fn import_key(
 ) -> Result<KeyEntry> {
     tauri::async_runtime::spawn_blocking(move||{
         if name.trim().is_empty()||content.len()>1024*1024||!content.contains("PRIVATE KEY-----"){return Err("Enter a label and an OpenSSH or PEM private key.".into());}
-        let id=Uuid::new_v4().to_string();let path=data_dir(&app)?.join("keys").join(&id);
+        let id=Uuid::new_v4().to_string();let scratch=local::scratch()?;let path=scratch.path().join("keys").join(&id);
         private_write(&path,format!("{}\n",content.trim()).as_bytes())?;
         let result=(||{
             let public=if public_key.trim().is_empty(){let output=Command::new(ssh::program("ssh-keygen")?).args(["-y","-P","","-f"]).arg(&path).output().map_err(|e|e.to_string())?;if !output.status.success(){return Err("Cannot read private key. For an encrypted key, supply its matching public key.".into());}String::from_utf8_lossy(&output.stdout).into_owned()}else{public_key};
-            public_fingerprint(&public)?;private_write(&path.with_extension("pub"),public.as_bytes())?;key_entry(&path,id,name)
+            public_fingerprint(&public)?;private_write(&path.with_extension("pub"),public.as_bytes())?;let entry=key_entry(&path,id,name)?;persist_key(&app,&path,&entry.id)?;Ok(entry)
         })();
         if result.is_err(){let _=fs::remove_file(&path);let _=fs::remove_file(path.with_extension("pub"));}result
     }).await.map_err(|e|e.to_string())?
@@ -493,14 +553,14 @@ fn read_sync_keys(app: tauri::AppHandle, ids: Vec<String>) -> Result<Vec<SyncKey
         .map(|id| {
             ssh::valid_id(&id)?;
             let path = directory.join(&id);
-            if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 128 * 1024 {
+            let secret = local::text(&app, &path)?;
+            if secret.len() > 128 * 1024 {
                 return Err("Private key exceeds 128 KB.".into());
             }
             Ok(SyncKey {
                 id,
-                secret: fs::read_to_string(&path).map_err(|e| e.to_string())?,
-                public_key: fs::read_to_string(path.with_extension("pub"))
-                    .map_err(|e| e.to_string())?,
+                secret,
+                public_key: local::text(&app, &path.with_extension("pub"))?,
             })
         })
         .collect()
@@ -595,7 +655,8 @@ async fn import_sync_key(
             return Err("Invalid synchronized private key.".into());
         }
         let id = Uuid::new_v4().to_string();
-        let path = data_dir(&app)?.join("keys").join(&id);
+        let scratch = local::scratch()?;
+        let path = scratch.path().join("keys").join(&id);
         private_write(&path, secret.as_bytes())?;
         let result = (|| {
             let derived = derive_sync_public(&path, &secret, &passphrase)?;
@@ -604,7 +665,9 @@ async fn import_sync_key(
                 return Err("The synchronized public and private keys do not match.".into());
             }
             private_write(&path.with_extension("pub"), derived.as_bytes())?;
-            key_entry(&path, id, name)
+            let entry = key_entry(&path, id, name)?;
+            persist_key(&app, &path, &entry.id)?;
+            Ok(entry)
         })();
         if result.is_err() {
             let _ = fs::remove_file(&path);
@@ -651,7 +714,7 @@ fn known_hosts(app: tauri::AppHandle) -> Result<Vec<KnownHost>> {
     if !path.exists() {
         return Ok(vec![]);
     }
-    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let content = local::text(&app, &path)?;
     content
         .lines()
         .filter(|s| !s.trim().is_empty() && !s.starts_with('#'))
@@ -660,6 +723,7 @@ fn known_hosts(app: tauri::AppHandle) -> Result<Vec<KnownHost>> {
 }
 #[tauri::command]
 fn import_known_hosts(app: tauri::AppHandle, content: String) -> Result<()> {
+    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
     if content.len() > 1024 * 1024 {
         return Err("File exceeds 1 MB.".into());
     }
@@ -673,26 +737,26 @@ fn import_known_hosts(app: tauri::AppHandle, content: String) -> Result<()> {
     for line in &lines {
         parse_known(line)?;
     }
-    let mut file = storage::options()
-        .create(true)
-        .append(true)
-        .open(data_dir(&app)?.join("known_hosts"))
-        .map_err(|e| e.to_string())?;
-    file.write_all(format!("\n{}\n", lines.join("\n")).as_bytes())
-        .map_err(|e| e.to_string())
+    let path = data_dir(&app)?.join("known_hosts");
+    let mut existing = if path.exists() {
+        local::text(&app, &path)?
+    } else {
+        String::new()
+    };
+    existing.push_str(&format!("\n{}\n", lines.join("\n")));
+    local::write(&app, &path, existing.as_bytes())
 }
 fn remove_known_host(app: tauri::AppHandle, line: String) -> Result<()> {
+    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
     let dir = data_dir(&app)?;
     let path = dir.join("known_hosts");
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = local::text(&app, &path)?;
     let kept = content
         .lines()
         .filter(|s| *s != line)
         .collect::<Vec<_>>()
         .join("\n");
-    let temp = dir.join(format!("known-{}.tmp", Uuid::new_v4()));
-    private_write(&temp, format!("{kept}\n").as_bytes())?;
-    fs::rename(temp, path).map_err(|e| e.to_string())
+    local::write(&app, &path, format!("{kept}\n").as_bytes())
 }
 fn prune_fingerprints(content: &str, removed: &[String]) -> String {
     let mut result = Vec::new();
@@ -737,16 +801,15 @@ fn prune_fingerprints(content: &str, removed: &[String]) -> String {
     format!("{}\n", result.join("\n"))
 }
 fn prune_synced_fingerprints(app: tauri::AppHandle, removed: Vec<String>) -> Result<()> {
+    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
     let directory = data_dir(&app)?;
     let path = directory.join("known_hosts");
     if removed.is_empty() || !path.exists() {
         return Ok(());
     }
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = local::text(&app, &path)?;
     let pruned = prune_fingerprints(&content, &removed);
-    let temporary = directory.join(format!("known-{}.tmp", Uuid::new_v4()));
-    private_write(&temporary, pruned.as_bytes())?;
-    fs::rename(temporary, path).map_err(|e| e.to_string())
+    local::write(&app, &path, pruned.as_bytes())
 }
 #[tauri::command]
 fn apply_sync(app: tauri::AppHandle, previous: Value, workspace: Value) -> Result<Vec<String>> {
@@ -790,6 +853,7 @@ fn apply_sync(app: tauri::AppHandle, previous: Value, workspace: Value) -> Resul
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(Sessions::default())
+        .manage(local::LocalStorage::default())
         .invoke_handler(tauri::generate_handler![
             workspace::new_item,
             workspace::edit_workspace,
@@ -803,6 +867,9 @@ pub fn run() {
             tabby::display_known,
             tabby::forget_fingerprint,
             apply_sync,
+            local::storage_status,
+            local::configure_storage,
+            local::unlock_storage,
             load_workspace,
             save_workspace,
             start_session,

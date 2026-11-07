@@ -73,7 +73,13 @@ actionlint
 desktop-file-validate packaging/linux/dev.tabius.desktop.desktop
 ```
 
-The frontend check runs strict TypeScript checking and Biome lint/format checks. Application regression tests, including the migrated workspace and sync suites, run with Cargo. Dependencies are prepared by `cargo build`, or can be installed independently with `bun install --frozen-lockfile`. `bun run dev` serves UI assets for frontend development. Workspace operations require the Rust desktop backend; there is no separate browser workspace or localStorage persistence.
+The frontend check runs strict TypeScript checking and Biome lint/format checks. Frontend regression tests run with `bun run test`; native application tests, including storage encryption, migration, and sync, run with Cargo. Dependencies are prepared by `cargo build`, or can be installed independently with `bun install --frozen-lockfile`. `bun run dev` serves UI assets for frontend development. Workspace operations require the Rust desktop backend; there is no separate browser workspace or localStorage persistence.
+
+The native secret-store contract test requires an unlocked OS credential store
+and uses a disposable credential entry. Run it separately with
+`cargo test --locked --lib local::tests::native_secret_store_roundtrip -- --ignored --exact`.
+The ordinary suite uses isolated files and fake credential-store responses, so
+it also runs on headless CI without a desktop keyring.
 
 Builds require the locked dependencies to be cached or the package registries to be reachable. With cached dependencies, Cargo's `--offline` option also works. Generated `target/`, `dist/`, `gen/`, and `node_modules/` directories are excluded from version control.
 
@@ -231,14 +237,51 @@ Rust runs the installed OpenSSH client in a controlling PTY and streams bytes to
 
 Application data is stored in Tauri's data directory for `dev.tabius.desktop`, normally `~/.local/share/dev.tabius.desktop` on Linux:
 
-- `workspace.json`: hosts, preferences, public key metadata, scripts, imported history, and sync state; atomically written with mode `0600`.
-- `keys/<uuid>`: private keys with mode `0600`, inside a `0700` directory. Encrypted keys retain their encryption; this is not an encrypted application vault.
-- `known_hosts`: application-specific OpenSSH trust entries.
+On first launch (including an upgrade from plaintext storage), choose a local
+storage password. Tabius saves it in the system secret store and unlocks
+automatically on subsequent launches: Secret Service on Linux (GNOME Keyring
+or KWallet with Secret Service enabled), Apple Keychain on macOS, and Windows
+Credential Manager. The password is written and read back before automatic
+unlock is enabled. If the secret store is unavailable, choose either a password
+prompt on every launch or explicitly continue without encryption. If a saved
+password later becomes unavailable, the workspace stays locked and accepts the
+original password; it never silently falls back to plaintext.
+
+Encrypted storage uses a random 256-bit key and XChaCha20-Poly1305 with a fresh
+nonce for every write. Filenames are authenticated to reject swapped files.
+The password wraps the storage key using the existing Argon2id, HKDF-SHA256,
+and XChaCha20-Poly1305 vault format. The unencrypted `local-storage.json` contains
+the storage mode, directory identifier, and password-encrypted key, never the
+password. Keep both this file and its data directory together when backing up.
+There is no password reset or recovery if the password and system-secret entry
+are both lost.
+
+An encrypted data directory with a random identifier contains:
+
+- `workspace.json`: encrypted hosts, preferences, public key metadata, scripts, imported history, and sync state.
+- `keys/<uuid>` and `.pub` files: encrypted private and public keys. Any original SSH-key passphrase encryption is preserved underneath local encryption.
+- `known_hosts`: encrypted application-specific OpenSSH trust entries.
+
+Migration writes and verifies encrypted copies before committing the storage
+configuration, then removes the original plaintext files. Failed migration
+leaves the originals available; cleanup interrupted after commit is retried on
+unlock. Deletion does not erase old filesystem snapshots or backups. In the
+explicit no-encryption mode, the original filenames stay in the application
+directory and contain plaintext.
 
 On Windows, the application directory and keys directory use a protected DACL
 granting full access only to the current user's SID; new files inherit that
 restriction. Unix files continue to use `0600` and directories `0700`.
 
-Passwords and session passphrases are not saved. Scripts, environment variables, and imported history are plaintext workspace data; review history for secrets. The webview does not persist a separate browser workspace.
+SSH passwords, key passphrases, and sync credentials are not saved. Only the
+local storage password is saved in the system secret store when that mode is
+selected. OpenSSH requires ordinary files, so key generation/import and live
+sessions use private temporary directories containing only the required keys
+and trust records. These are removed when the operation/session finishes;
+Linux prefers `XDG_RUNTIME_DIR` (normally memory-backed), otherwise the OS
+temporary directory is used. A forced kill or OS crash can leave temporary
+copies behind. Local encryption protects persistent app files, not the memory
+or files accessible to processes running as your user while unlocked. The
+webview does not persist a separate browser workspace.
 
 Live SSH sessions, a live Tabby-Web account, release packaging, and non-Linux platforms require separate runtime validation; unit tests do not establish those claims.
