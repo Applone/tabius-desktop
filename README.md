@@ -137,7 +137,7 @@ repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
 
 ## Features
 
-- **Hosts:** SSH agent, managed keys or interactive password authentication; port, username, agent forwarding, startup snippet, jump hosts, SSH proxy hop, environment variables, UTF-8 locale, and Mosh. Tags and groups are omitted.
+- **Hosts:** double-click a host to open a session, or focus it and press Enter/Space. SSH agent, managed keys or interactive password authentication; port, username, agent forwarding, startup snippet, jump hosts, SSH proxy hop, environment variables, UTF-8 locale, and Mosh. Tags and groups are omitted.
 - **Keychain:** generate Ed25519 or RSA-4096 keys with optional passphrase encryption, import OpenSSH/PEM keys, copy public keys, and delete keys. Passphrases are entered through a PTY rather than process arguments. Encrypted manual imports need the matching public key.
 - **Port forwarding:** local, remote, and dynamic SOCKS rules. Listeners bind to loopback; remote listeners also depend on the server's GatewayPorts policy. Closing a tunnel tab stops it.
 - **Snippets and history:** save scripts, run them in an open session, or use them at startup. Explicitly import Bash/Zsh history and turn a command into a snippet. Terminal input is not recorded. Selecting a session under Run in session executes the script.

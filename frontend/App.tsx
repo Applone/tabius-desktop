@@ -1,20 +1,17 @@
 import {
   ArrowRight,
   ArrowsLeftRight,
-  ArrowUpRight,
   CheckCircle,
   CircleNotch,
   ClockCounterClockwise,
   Code,
   Copy,
-  Desktop,
   Fingerprint,
   GearSix,
   Key,
   PencilSimple,
   Plus,
   HardDrives as Server,
-  ShieldCheck,
   Terminal,
   Trash,
   UploadSimple,
@@ -30,6 +27,7 @@ import forwardingIcon from "./assets/tabius/port-forwarding.svg";
 import snippetsIcon from "./assets/tabius/snippets.svg";
 import type { Editor } from "./Editors";
 import { EditorModal } from "./Editors";
+import { HostCard } from "./HostCard";
 import type { Forward, Host, KnownHost, Snippet, Workspace } from "./model";
 import { SettingsView } from "./Settings";
 import { SSHConfigImport } from "./SSHConfigImport";
@@ -357,49 +355,15 @@ export function App() {
                       </div>
                       <div className="host-grid">
                         {workspace.hosts.map((host) => (
-                          <article className="host-card" key={host.id}>
-                            <div className="card-top">
-                              <div className="host-icon">
-                                <Server size={24} />
-                              </div>
-                              <div className="card-actions">
-                                <button
-                                  type="button"
-                                  aria-label={`Edit ${host.name}`}
-                                  onClick={() =>
-                                    setEditor({ type: "host", value: host })
-                                  }
-                                >
-                                  <PencilSimple size={16} />
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label={`Delete ${host.name}`}
-                                  onClick={() => remove("hosts", host.id)}
-                                >
-                                  <Trash size={16} />
-                                </button>
-                              </div>
-                            </div>
-                            <h3>{host.name}</h3>
-                            <p className="mono">
-                              {host.address}
-                              <span className="host-port">:{host.port}</span>
-                            </p>
-                            <div className="card-bottom">
-                              <span>
-                                <Desktop size={14} />
-                                {host.system}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => connect(host)}
-                              >
-                                Connect
-                                <ArrowUpRight size={16} />
-                              </button>
-                            </div>
-                          </article>
+                          <HostCard
+                            key={host.id}
+                            host={host}
+                            onConnect={() => void connect(host)}
+                            onEdit={() =>
+                              setEditor({ type: "host", value: host })
+                            }
+                            onDelete={() => remove("hosts", host.id)}
+                          />
                         ))}
                       </div>
                     </>
@@ -744,10 +708,8 @@ export function App() {
                             </h3>
                             <p className="mono">{item.fingerprint}</p>
                           </div>
-                          {item.synced ? (
+                          {item.synced && (
                             <span className="badge">Reference fingerprint</span>
-                          ) : (
-                            <ShieldCheck size={20} className="accent" />
                           )}
                           <button
                             type="button"

@@ -29,114 +29,108 @@ export function SettingsView({
     onChange({ ...s, [key]: value });
   return (
     <div className="settings-layout">
-      <div className="settings-section" inert={syncing}>
-        <div className="settings-section-heading">
-          <Terminal size={20} />
-          <div>
-            <h3>Terminal</h3>
+      <div>
+        <div className="settings-section" inert={syncing}>
+          <div className="settings-section-heading">
+            <Terminal size={20} />
+            <div>
+              <h3>Terminal</h3>
+            </div>
           </div>
-        </div>
-        <Field label="Emulator type" hint="Applies to new connections.">
-          <select
-            value={s.emulator}
-            onChange={(e) => set("emulator", e.target.value)}
-          >
-            {["xterm-256color", "xterm", "linux", "vt100"].map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-          </select>
-        </Field>
-        <div className="form-columns">
-          <Field label="Font family">
+          <Field label="Emulator type" hint="Applies to new connections.">
             <select
-              value={s.font}
-              onChange={(e) => set("font", e.target.value)}
+              value={s.emulator}
+              onChange={(e) => set("emulator", e.target.value)}
             >
-              {[
-                "monospace",
-                "JetBrains Mono",
-                "SFMono-Regular",
-                "Menlo",
-                "Consolas",
-                "DejaVu Sans Mono",
-              ].map((v) => (
+              {["xterm-256color", "xterm", "linux", "vt100"].map((v) => (
                 <option key={v}>{v}</option>
               ))}
             </select>
           </Field>
-          <Field label="Font size">
-            <select
-              value={s.fontSize}
-              onChange={(e) => set("fontSize", Number(e.target.value))}
-            >
-              {[10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32].map((v) => (
-                <option key={v} value={v}>
-                  {v} px
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Line height">
-          <input
-            type="range"
-            min="1"
-            max="1.8"
-            step="0.05"
-            value={s.lineHeight}
-            onChange={(e) => set("lineHeight", Number(e.target.value))}
-          />
-        </Field>
-        <Field label="Theme">
-          <div className="theme-options">
-            {["Graphite", "Midnight", "Paper"].map((theme) => (
-              <button
-                type="button"
-                key={theme}
-                className={`theme-option ${theme.toLowerCase()} ${s.theme === theme ? "chosen" : ""}`}
-                onClick={() => set("theme", theme)}
+          <div className="form-columns">
+            <Field label="Font family">
+              <select
+                value={s.font}
+                onChange={(e) => set("font", e.target.value)}
               >
-                <div>
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                {theme}
-                {s.theme === theme && <CheckCircle size={15} />}
-              </button>
-            ))}
+                {[
+                  "monospace",
+                  "JetBrains Mono",
+                  "SFMono-Regular",
+                  "Menlo",
+                  "Consolas",
+                  "DejaVu Sans Mono",
+                ].map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Font size">
+              <select
+                value={s.fontSize}
+                onChange={(e) => set("fontSize", Number(e.target.value))}
+              >
+                {[10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32].map(
+                  (v) => (
+                    <option key={v} value={v}>
+                      {v} px
+                    </option>
+                  ),
+                )}
+              </select>
+            </Field>
           </div>
-        </Field>
-        <Toggle
-          label="ANSI highlighting"
-          description="Use color for the terminal’s ANSI palette."
-          value={s.highlighting}
-          onChange={(v) => set("highlighting", v)}
-        />
-        <div
-          className={`terminal-preview ${s.theme.toLowerCase()}`}
-          style={{
-            fontFamily: s.font,
-            fontSize: s.fontSize,
-            lineHeight: s.lineHeight,
-          }}
-        >
-          <span className={s.highlighting ? "accent" : ""}>you@tabius</span>{" "}
-          <span className="muted">~</span> $ ssh your-server
-          <br />
-          <span className="muted">Linux server 6.12.0 x86_64</span>
-          <br />$ <span className="preview-cursor" />
+          <Field label="Line height">
+            <input
+              type="range"
+              min="1"
+              max="1.8"
+              step="0.05"
+              value={s.lineHeight}
+              onChange={(e) => set("lineHeight", Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Theme">
+            <div className="theme-options">
+              {["Graphite", "Midnight", "Paper"].map((theme) => (
+                <button
+                  type="button"
+                  key={theme}
+                  className={`theme-option ${theme.toLowerCase()} ${s.theme === theme ? "chosen" : ""}`}
+                  onClick={() => set("theme", theme)}
+                >
+                  <div>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  {theme}
+                  {s.theme === theme && <CheckCircle size={15} />}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Toggle
+            label="ANSI highlighting"
+            description="Use color for the terminal’s ANSI palette."
+            value={s.highlighting}
+            onChange={(v) => set("highlighting", v)}
+          />
+          <div
+            className={`terminal-preview ${s.theme.toLowerCase()}`}
+            style={{
+              fontFamily: s.font,
+              fontSize: s.fontSize,
+              lineHeight: s.lineHeight,
+            }}
+          >
+            <span className={s.highlighting ? "accent" : ""}>you@tabius</span>{" "}
+            <span className="muted">~</span> $ ssh your-server
+            <br />
+            <span className="muted">Linux server 6.12.0 x86_64</span>
+            <br />$ <span className="preview-cursor" />
+          </div>
         </div>
-      </div>
-      <div>
-        <SyncSettings
-          disabled={syncing}
-          workspace={workspace}
-          onApply={onSyncApply}
-          onBusy={onSyncBusy}
-          isCurrent={isCurrent}
-        />
-        <MigrationSettings disabled={syncing} onBusy={onSyncBusy} />
         <div className="settings-section" inert={syncing}>
           <div className="settings-section-heading">
             <GearSix size={20} />
@@ -190,6 +184,16 @@ export function SettingsView({
             </p>
           </div>
         </div>
+      </div>
+      <div>
+        <SyncSettings
+          disabled={syncing}
+          workspace={workspace}
+          onApply={onSyncApply}
+          onBusy={onSyncBusy}
+          isCurrent={isCurrent}
+        />
+        <MigrationSettings disabled={syncing} onBusy={onSyncBusy} />
       </div>
     </div>
   );
