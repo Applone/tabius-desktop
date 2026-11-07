@@ -63,6 +63,8 @@ jobs:
           esac
       - name: Check frontend types, lint, and formatting
         run: bun run check
+      - name: Test frontend
+        run: bun run test
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Lint Rust

@@ -144,7 +144,7 @@ repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
 - **Known hosts:** inspect/import/remove verified OpenSSH identities. New keys require confirmation and changed keys block connections.
 - **Settings:** reconnect, bell, Option as Meta, TERM selection, local fonts, themes, ANSI colors, OS detection, and post-quantum key-exchange compatibility.
 
-Host chaining and the proxy field accept SSH hops, not HTTP/SOCKS proxy commands. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
+Host chaining lets you choose an existing host and copies its username, address, port, and preceding SSH hops into the jump route. Later changes to that host require selecting it again. Existing imported routes are preserved and can be cleared with None. Jump-host authentication uses the SSH agent or default identity files; managed key assignments apply to the destination host. The SSH proxy field accepts an SSH hop, not an HTTP/SOCKS proxy command. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
 
 ## Import OpenSSH configuration
 

@@ -18,6 +18,13 @@ export interface Host {
   mosh: boolean;
   system: string;
 }
+export function hostChain(host: Host): string {
+  const address = host.address.includes(":")
+    ? `[${host.address}]`
+    : host.address;
+  const endpoint = `${host.username ? `${host.username}@` : ""}${address}:${host.port}`;
+  return [host.proxy, host.jump, endpoint].filter(Boolean).join(",");
+}
 export interface KeyEntry {
   syncId?: string;
   id: string;

@@ -12,6 +12,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { native } from "./api";
 import type { Forward, Host, KeyEntry, Snippet, Workspace } from "./model";
+import { hostChain } from "./model";
 import { Field, Modal, Toggle } from "./ui";
 export type Editor =
   | { type: "host"; value: Host }
@@ -64,6 +65,7 @@ export function EditorModal({
     setHost({ ...host, [key]: value });
   const setF = <K extends keyof Forward>(key: K, value: Forward[K]) =>
     setRule({ ...rule, [key]: value });
+  const chainHosts = workspace.hosts.filter((h) => h.id !== host.id);
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -230,13 +232,25 @@ export function EditorModal({
                 </Field>
                 <Field
                   label="Host chaining"
-                  hint="Comma-separated SSH jump hosts, e.g. user@bastion:22."
+                  hint="Copy a saved host's SSH route as the jump route. Authentication uses your SSH agent or default keys."
                 >
-                  <input
+                  <select
                     value={host.jump}
                     onChange={(e) => setH("jump", e.target.value)}
-                    placeholder="user@bastion.example.com:22"
-                  />
+                  >
+                    <option value="">None</option>
+                    {host.jump &&
+                      !chainHosts.some((h) => hostChain(h) === host.jump) && (
+                        <option value={host.jump}>
+                          Existing route ({host.jump})
+                        </option>
+                      )}
+                    {chainHosts.map((h) => (
+                      <option key={h.id} value={hostChain(h)}>
+                        {h.name} ({h.address}:{h.port})
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field
                   label="SSH proxy"
