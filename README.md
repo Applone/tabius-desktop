@@ -1,312 +1,134 @@
 # Tabius Desktop
 
-A Rust application built with Tauri 2. Rust owns workspace defaults, validation and edits, shell-history import, SSH sessions and reconnects, key management, known-host fingerprints, and Tabby-Web synchronization, including YAML, vault encryption and three-way merging. React/TypeScript and xterm.js handle rendering, forms, terminal display and input, and native-command bindings.
+A desktop SSH client built with Rust, Tauri 2, React, and xterm.js.
+
+- Saved hosts and groups, SSH jump hosts, and optional Mosh support.
+- Managed SSH keys, local/remote/SOCKS forwarding, and verified host fingerprints.
+- Snippets, Bash/Zsh history import, and OpenSSH configuration import.
+- Draggable session tabs, configurable shortcuts, themes, and reconnect.
+- Encrypted local storage and optional Tabby-Web-compatible configuration sync.
 
 ## Build and run
 
-Run Cargo from the repository root:
-
-```sh
-cargo build --locked
-cargo run --locked
-cargo build --release --locked
-```
-
-Executables are written to `target/debug/tabius-desktop` and `target/release/tabius-desktop`.
-
-The project uses Rust edition 2024 and pins Rust 1.99.1 in
-`rust-toolchain.toml`. Install Rust through rustup and Bun 1.4.2 or later.
-
-Cargo's `src/build.rs` installs frontend dependencies from the frozen Bun lockfile, checks TypeScript, bundles the UI with Vite, and embeds the result in the native executable. No separate frontend build command or running development server is needed. Both debug and release builds use embedded assets. An input/output fingerprint avoids rebuilding unchanged UI assets and detects missing or modified `dist/` files.
-
-Bun is still an internal frontend tool, so it must be installed alongside Rust. On Arch/CachyOS, install the native prerequisites with:
+Install Rust through rustup (the toolchain is pinned in `rust-toolchain.toml`),
+Bun 1.4.2+, and the native dependencies for your platform. On Arch/CachyOS:
 
 ```sh
 sudo pacman -S --needed base-devel rust bun openssh webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg
 ```
 
-Linux is the primary development host. Native CI builds cover Linux x64,
-macOS 13+ on Apple Silicon and Intel, and Windows x64. The terminal backend uses
-Unix PTYs or Windows ConPTY. Windows requires the OpenSSH Client optional
-feature; the NSIS installer offers WebView2 installation when needed. Mosh
-connections require `mosh` locally and `mosh-server` remotely; Mosh is optional
-and is not bundled.
-
-On Windows, the app and tests use `ssh.exe` and `ssh-keygen.exe` from
-`%SystemRoot%\System32\OpenSSH`, so Git Bash's bundled SSH does not override
-the native client. Linux and macOS resolve these programs through `PATH`.
-
-## Layout
-
-```text
-Cargo.toml / Cargo.lock   Rust package and locked dependencies
-src/                     Rust application logic and tests; build.rs builds the UI
-frontend/                React components, terminal UI, and styles
-src/fixtures/            Independent legacy and modern vault fixtures
-docs/sync-encryption.md  Sync server contract and version 2 encryption format
-assets/icons/            Application icon and its SVG source
-tauri.conf.json         Native window, assets, and bundle configuration
-package.json / bun.lock  Internal frontend tooling and locked dependencies
-rust-toolchain.toml      Pinned Rust toolchain and components
-.github/                Debug/release workflows and Dependabot configuration
-packaging/              nFPM configuration, desktop entry, and pinned tools
-scripts/release.py       Native bundles, archives, and checksum verification
-```
-
-Tauri core/plugin capabilities are not granted: the frontend currently uses only custom Rust commands and IPC channels. A capabilities directory is not required for these APIs; see [Tauri’s capability documentation](https://v2.tauri.app/security/capabilities/).
-
-Rust tests live beside their code in `src/`, including native PTY and OpenSSH
-storage checks. There is no browser or UI end-to-end test tooling.
-
-## Checks and unit tests
+Run from the repository root:
 
 ```sh
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets --all-features
-bun run check
-uv tool run ruff==0.17.2 check scripts
-uv tool run ruff==0.17.2 format --check scripts
-bash -n scripts/test-linux-package.sh
-shellcheck scripts/test-linux-package.sh
-actionlint
-desktop-file-validate packaging/linux/dev.tabius.desktop.desktop
-```
-
-The frontend check runs strict TypeScript checking and Biome lint/format checks. Frontend regression tests run with `bun run test`; native application tests, including storage encryption, migration, and sync, run with Cargo. Dependencies are prepared by `cargo build`, or can be installed independently with `bun install --frozen-lockfile`. `bun run dev` serves UI assets for frontend development. Workspace operations require the Rust desktop backend; there is no separate browser workspace or localStorage persistence.
-
-The native secret-store contract test requires an unlocked OS credential store
-and uses a disposable credential entry. Run it separately with
-`cargo test --locked --lib local::tests::native_secret_store_roundtrip -- --ignored --exact`.
-The ordinary suite uses isolated files and fake credential-store responses, so
-it also runs on headless CI without a desktop keyring.
-
-Builds require the locked dependencies to be cached or the package registries to be reachable. With cached dependencies, Cargo's `--offline` option also works. Generated `target/`, `dist/`, `gen/`, and `node_modules/` directories are excluded from version control.
-
-## CI and distribution
-
-The workflows follow the ParakeetX Debug/Release structure. Branch pushes,
-pull requests, and manual Debug runs check and build all four targets. Each
-job uploads a portable archive and its SHA-256 checksum, retained for 14 days.
-Tag pushes run Release builds and publish only after the version, archive
-smoke checks, complete asset set, checksums, and Linux installation checks pass.
-Tags must be `0.1.0` or `v0.1.0` for the current version; update `Cargo.toml`,
-`package.json`, and `tauri.conf.json` together before the next release.
-
-| System              | Release assets                                       |
-| ------------------- | ---------------------------------------------------- |
-| Linux x64           | Portable TAR.GZ and nFPM DEB, RPM, and Arch packages |
-| macOS Apple Silicon | Application ZIP and DMG                              |
-| macOS Intel         | Application ZIP and DMG                              |
-| Windows x64         | Portable ZIP and Tauri NSIS EXE installer            |
-
-Linux builds run in Ubuntu 22.04 for a glibc 2.35 baseline. Packages use the
-system GTK 3 and WebKitGTK 4.1 libraries. The installation matrix covers Debian
-12, Ubuntu 22.04, Fedora 44, and Arch Linux. AlmaLinux 9 from the reference
-workflow is not a supported runtime because its default WebKitGTK ABI differs
-from [Tauri's WebKitGTK 4.1 requirement](https://v2.tauri.app/start/prerequisites/).
-Portable Linux archives also require those system libraries and OpenSSH.
-
-macOS bundles use ad-hoc signatures; Apple Developer signing and notarization
-are not configured. Windows installers are unsigned. Archive checks execute
-`--version` and `--help`; macOS also verifies the bundle signature and DMG.
-Linux release jobs install and uninstall each package in an isolated container
-and check that user data survives removal. Native Windows and macOS installers
-and live SSH connections still require testing on those systems.
-
-To package an existing native build locally, install Python 3.11+ and uv, then
-run from the repository root. On Linux, `install-tools` downloads the pinned
-nFPM release and verifies its published SHA-256 checksum:
-
-```sh
-uv run --no-project python scripts/release.py install-tools
-export PATH="${TMPDIR:-/tmp}/tabius-tools:$PATH"
+cargo run --locked
 cargo build --release --locked
-uv run --no-project python scripts/release.py package \
-  --target x86_64-unknown-linux-gnu --build-dir target/release \
-  --installers --verify
 ```
 
-Use `--configuration Debug` without `--installers` for debug archives. CI builds
-use explicit target directories; macOS and Windows bundles should likewise be
-built with `cargo build --target <triple>` before invoking the script. These
-bundles use the Tauri CLI installed by the frozen Bun dependencies. Icons for
-Windows and macOS are generated from `assets/icons/icon.svg` with `bun run
-tauri icon`; the PNG and SVG remain the Linux icon sources. Generated release
-files are written to the ignored `artifacts/` directory.
+Cargo installs frontend dependencies from the frozen Bun lockfile, checks
+TypeScript, and embeds the built UI. No frontend development server is required.
+The release executable is `target/release/tabius-desktop` (`.exe` on Windows).
+Windows requires OpenSSH Client; Mosh requires a local client and remote server.
 
-Dependabot follows ParakeetX's weekly grouped updates, five-PR limit, reviewer,
-assignee, and commit prefixes, without dependency ignores. Cargo, Bun, and
-GitHub Actions are monitored; the reference's Python-worker entry is replaced
-by Bun because the packaging script uses only Python's standard library. The
-repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
+## Releases
 
-## Features
+| Platform                            | Packages                       |
+| ----------------------------------- | ------------------------------ |
+| Linux x64                           | TAR.GZ, DEB, RPM, Arch package |
+| macOS 13+ (Apple Silicon and Intel) | ZIP, DMG                       |
+| Windows x64                         | ZIP, NSIS installer            |
 
-- **Hosts:** double-click a host to open a session, or focus it and press Enter/Space. Create and rename host groups, assign hosts in host details, or add hosts directly to a group. Deleting a group moves its hosts to Ungrouped. SSH agent, managed keys or interactive password authentication; port, username, agent forwarding, startup snippet, jump hosts, SSH proxy hop, environment variables, UTF-8 locale, and Mosh.
-- **Keychain:** generate Ed25519 or RSA-4096 keys with optional passphrase encryption, import OpenSSH/PEM keys, copy public keys, and delete keys. Passphrases are entered through a PTY rather than process arguments. Encrypted manual imports need the matching public key.
-- **Port forwarding:** local, remote, and dynamic SOCKS rules. Listeners bind to loopback; remote listeners also depend on the server's GatewayPorts policy. Closing a tunnel tab stops it.
-- **Snippets and history:** save scripts, run them in an open session, or use them at startup. Explicitly import Bash/Zsh history and turn a command into a snippet. Terminal input is not recorded. Selecting a session under Run in session executes the script.
-- **Known hosts:** inspect/import/remove verified OpenSSH identities. New keys require confirmation and changed keys block connections.
-- **Settings:** configurable keyboard shortcuts, reconnect, bell, Option as Meta, TERM selection, local fonts, themes, ANSI colors, OS detection, and post-quantum key-exchange compatibility.
+Linux requires glibc 2.35+, GTK 3, WebKitGTK 4.1, and OpenSSH. Release installation
+checks cover Debian 12, Ubuntu 22.04, Fedora 44, and Arch Linux. Portable archives
+also need these system dependencies. macOS bundles are ad-hoc signed without
+notarization; Windows installers are unsigned and offer WebView2 installation.
 
-Drag session tabs to reorder them without reconnecting. Click a tab anywhere
-outside its close control to select it. Closing the active tab selects an
-adjacent session; the Library tab remains available. The plus button opens a
-host picker with search by name, address, or group; Enter opens the first match.
+Tag pushes publish releases after checks pass. Tags must match the versions in
+`Cargo.toml`, `package.json`, and `tauri.conf.json`. See the
+[release workflow](.github/workflows/release.yml) and
+[packaging tool](scripts/release.py) for the complete process.
 
-Default shortcuts (use Cmd instead of Ctrl for the Shift combinations on macOS):
+## Usage
 
-| Action                                 | Shortcut                      |
-| -------------------------------------- | ----------------------------- |
-| New session tab / host picker          | Ctrl+Shift+T                  |
-| Close active session tab               | Ctrl+Shift+W                  |
-| Next / previous tab, including Library | Ctrl+Tab / Ctrl+Shift+Tab     |
-| Open Snippets                          | Ctrl+Shift+S                  |
-| Open host library                      | Ctrl+Shift+L                  |
-| Session tabs 1–8 / last session        | Ctrl+Shift+1–8 / Ctrl+Shift+9 |
+Double-click a host to connect, or focus it and press Enter/Space. Drag tabs to
+reorder sessions. The plus button opens a host picker searchable by name,
+address, or group. Deleting a group keeps its hosts in Ungrouped.
 
-Change bindings under Settings → Keyboard shortcuts. Click a binding and press
-a combination; Escape cancels, Backspace/Delete clears it, and Reset shortcuts
-restores defaults. Conflicting bindings are rejected. Shortcuts apply while the
-app is focused, including inside terminals; regular form inputs, open dialogs,
-and shortcut recording keep their keyboard input. OS-reserved combinations
-may be intercepted before reaching the app. Groups and custom shortcuts are
-stored in the local workspace and are not uploaded through Tabby-Web sync;
-sync preserves group assignments for existing local hosts.
+Import hosts and managed keys through **Hosts → Import SSH config**. Review the
+preview and warnings before importing; existing hosts and original key files
+are preserved. Unsupported options are reported, and hosts requiring
+`ProxyCommand` are skipped.
 
-Host chaining lets you choose an existing host and copies its username, address, port, and preceding SSH hops into the jump route. Later changes to that host require selecting it again. Existing imported routes are preserved and can be cleared with None. Jump-host authentication uses the SSH agent or default identity files; managed key assignments apply to the destination host. The SSH proxy field accepts an SSH hop, not an HTTP/SOCKS proxy command. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
+Host chaining copies a saved host's endpoint and preceding hops; select it again
+after changing that host. Jump hosts use the SSH agent or default identity files;
+managed key assignments apply to the destination. The SSH proxy field accepts
+an SSH hop. New server keys require confirmation; changed keys block connection.
 
-## Import OpenSSH configuration
+| Action                     | Default shortcut              |
+| -------------------------- | ----------------------------- |
+| New / close session tab    | Ctrl+Shift+T / Ctrl+Shift+W   |
+| Next / previous tab        | Ctrl+Tab / Ctrl+Shift+Tab     |
+| Snippets / host library    | Ctrl+Shift+S / Ctrl+Shift+L   |
+| Session 1–8 / last session | Ctrl+Shift+1–8 / Ctrl+Shift+9 |
 
-Choose **Hosts → Import SSH config**, then **Read configuration** to preview
-`~/.ssh/config`, or enter another configuration path. Review the hosts, key count,
-and warnings, then choose **Import**. Existing hosts are preserved; repeated
-imports skip their aliases, including imported hosts you have renamed.
+Use Cmd instead of Ctrl for the Shift combinations on macOS, except previous
+tab. Change bindings in **Settings → Keyboard shortcuts**; Escape cancels,
+Backspace/Delete clears, and Reset shortcuts restores defaults. Shortcuts apply
+inside terminals while ordinary forms and dialogs retain their keyboard input.
 
-The importer reads explicit `Host` aliases, `HostName`, `User`, `Port`,
-`ForwardAgent`, `IdentityFile`, and `ProxyJump`. It applies wildcard and negated
-host patterns, first-value defaults, quoted values, comments, and `Include`
-globs in lexical order. Relative includes resolve under `~/.ssh`. Jump aliases
-are expanded into concrete SSH endpoints and cyclic chains are rejected.
-`Match` blocks are skipped without running commands; unsupported options appear
-in the preview. Hosts requiring `ProxyCommand` are skipped. System-wide SSH
-configuration is not imported.
+## Local storage
 
-Referenced private keys, or available default identities when no `IdentityFile`
-is specified, are copied into the managed Keychain and deduplicated by public
-fingerprint. The originals remain untouched. Encrypted OpenSSH keys retain their
-encryption and do not require a password to migrate. Other encrypted formats
-require their matching `.pub` file. Keys are eligible for the existing encrypted
-configuration sync; private material stays out of workspace metadata and the
-webview. If multiple keys apply, all are migrated and the first is assigned to
-the host. Jump-host authentication uses the SSH agent or default identity files;
-managed key assignments apply to the destination host.
+On first launch, choose a password to encrypt hosts, keys, snippets, history,
+settings, and trust records, including existing plaintext data. Automatic unlock
+stores the password in Linux Secret Service (GNOME Keyring or compatible
+KWallet), Apple Keychain, or Windows Credential Manager. If unavailable, choose
+manual unlock on each launch or explicitly continue without encryption.
+
+Storage uses XChaCha20-Poly1305 with a random key wrapped using Argon2id and
+HKDF-SHA256. Back up the entire application data directory, including
+`local-storage.json`; on Linux it is normally
+`~/.local/share/dev.tabius.desktop`. Keep the password: there is no recovery if
+both it and the system-secret entry are lost. An unavailable saved password
+leaves the workspace locked until manually unlocked.
+
+SSH passwords, key passphrases, and sync credentials are not saved. OpenSSH
+operations temporarily decrypt required keys and trust files into private
+directories, removed on completion; a crash can leave copies behind. Encryption
+protects persistent app files, not an unlocked session or previous plaintext
+backups and snapshots. Terminal input is not recorded.
 
 ## Configuration sync
 
-In **Settings → Configuration sync**, enter an HTTPS server URL and synchronization token, load configurations, select one, choose encryption, and enter its vault password. Then choose **Synchronize**. Tokens and vault passwords stay in memory; only the destination, encryption mode, last-sync date, and merge baselines are persisted.
+In **Settings → Configuration sync**, enter the HTTPS server URL and token,
+select a configuration, choose encryption, enter its vault password, and
+synchronize. Sync includes hosts, private keys, and fingerprint references;
+groups, shortcuts, snippets, forwarding, history, and terminal settings stay local.
+Fingerprint references still require explicit trust before connecting.
 
-The protocol matches the iOS project: Bearer-authenticated `GET /api/1/configs`, `GET /api/1/configs/{id}`, and `PATCH /api/1/configs/{id}`. Redirects are rejected. Three-way merging propagates deletions and independent edits, and blocks conflicting edits before upload. A second read checks for concurrent changes; If-Match is sent when an ETag is available. Servers without conditional writes can still race between that read and PATCH.
+Modern encryption uses Argon2id, HKDF-SHA256, and XChaCha20-Poly1305. Legacy Tabby
+compatibility is available, but existing Tabby clients cannot read modern vaults.
+Conflicting edits block sync. Servers without conditional writes can still race
+with concurrent updates. See the [sync protocol and encryption specification](docs/sync-encryption.md).
 
-Sync includes host names/endpoints/users/key assignments, private keys, and fingerprint references. It preserves unrelated profiles, templates, options, vault files, and password secrets. Key baselines contain hashes rather than private-key material.
+**Settings → Migrate from Tabby-Web** previews and copies a legacy configuration
+to a selected destination using modern encryption. Migration replaces that
+destination and preserves the source. The [Tabius sync server](https://github.com/Applone/tabius-sync)
+stores encrypted configurations without receiving vault passwords.
 
-**Modern encryption (recommended)** is the default for new connections: Argon2id v19 (64 MiB, three passes, four lanes), HKDF-SHA256 with a vault-specific context, and XChaCha20-Poly1305 authenticated encryption. It encrypts the whole configuration and creates a vault if needed. Selecting modern mode upgrades plaintext or legacy vaults on the next successful sync. Version 2 requires compatible clients; existing Tabby clients cannot decrypt it. Modern vaults cannot be downgraded through compatibility mode, and a previously modern destination returning legacy or plaintext content blocks sync.
+## Development checks
 
-**Tabby compatibility (legacy, not recommended)** retains [Tabby's version 1 format](https://github.com/Eugeny/tabby/wiki/Vault-Encryption): AES-256-CBC with PBKDF2-HMAC-SHA512, 100,000 iterations, an eight-byte salt, and a 16-byte IV. Existing saved connections without a mode retain compatibility behavior. Both whole-configuration and secrets-only legacy vaults remain supported; private keys require an existing encrypted vault in this mode.
+```sh
+bun install --frozen-lockfile
+bun run check
+bun run test
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
+```
 
-The [server contract and encryption specification](docs/sync-encryption.md) describe how a lightweight server can store opaque configuration content without holding encryption keys. Tests cover an independent libsodium-based version 2 fixture and the existing iOS version 1 compatibility fixture.
+Rust code and tests are in `src/`; the UI is in `frontend/`. Packaging and CI
+checks are defined in [.github/workflows/build.yml](.github/workflows/build.yml).
+The optional native secret-store test requires an unlocked system credential store:
 
-Advanced SSH options, snippets, forwarding rules, history, and terminal settings remain local. Imported jump-host references resolve to SSH chains; missing references and cycles block import. Unsupported proxy profiles block sync. Saved passwords remain in the remote vault and are entered interactively here.
-
-Synced fingerprints are references, not automatically trusted keys. They appear in Known hosts and before the SSH prompt for comparison. Changes or deletions revoke matching previous local trust entries after successful upload; accepting a new key still requires confirmation.
-
-## Migrate from a legacy Tabby-Web server
-
-In **Settings → Migrate from Tabby-Web**, enter the legacy **Tabby-Web server**
-and new **Tabius sync server** HTTPS URLs and their separate synchronization
-tokens. Load each server's configurations and select the source and destination.
-Create a configuration on the Tabius server first if it has none. Enter the old
-Tabby-Web vault password when encrypted, and choose a password for the new
-Tabius vault. Choose **Preview migration**,
-review the counts and destination, then choose **Migrate and replace destination**
-(or **Migrate to Tabius** for an empty destination).
-
-The desktop decrypts the legacy vault locally, then encrypts the complete copy
-with Argon2id, HKDF-SHA256, and XChaCha20-Poly1305 before uploading it to Tabius.
-Migration replaces the selected destination configuration. It preserves all
-profiles, templates, private-key files, saved passwords, passphrases, fingerprints, and
-unrelated configuration and vault fields. Plaintext configurations and both
-legacy vault forms are supported. The source configuration and local workspace
-remain unchanged. Tokens and passwords are not persisted. Legacy Tabby clients
-cannot read the destination's version 2 vault.
-
-Both configurations are checked against the preview and read again before
-upload. Changes stop migration; the destination's ETag is sent with the write
-when available. After uploading, the desktop reads the destination back and
-checks that it retained the exact encrypted copy before reporting success.
-Servers without conditional writes still have a race between the final read and
-upload. After migration, use **Configuration sync** to connect
-to the destination with its token and the new vault password. The desktop still
-prompts interactively for SSH passwords; saved passwords are preserved in the
-remote vault for compatible clients.
-
-The [Tabius sync server](https://github.com/Applone/tabius-sync) implements the same
-HTTP API as Tabby-Web. Its SQLCipher database password is separate from both the
-sync token and the client-side vault password entered here. The server never
-receives either vault password; it stores the encrypted copy unchanged.
-
-## Storage and transport
-
-Rust runs the installed OpenSSH client in a controlling PTY and streams bytes to xterm.js over Tauri IPC. Session resizes reach the PTY; closing sessions or exiting the app terminates Unix process groups or the Windows process tree. The main connection ignores the user's SSH config so UI preferences are deterministic. Without a selected managed key, OpenSSH can use its agent and default identity paths. Jump hosts may use the system trust file.
-
-Application data is stored in Tauri's data directory for `dev.tabius.desktop`, normally `~/.local/share/dev.tabius.desktop` on Linux:
-
-On first launch (including an upgrade from plaintext storage), choose a local
-storage password. Tabius saves it in the system secret store and unlocks
-automatically on subsequent launches: Secret Service on Linux (GNOME Keyring
-or KWallet with Secret Service enabled), Apple Keychain on macOS, and Windows
-Credential Manager. The password is written and read back before automatic
-unlock is enabled. If the secret store is unavailable, choose either a password
-prompt on every launch or explicitly continue without encryption. If a saved
-password later becomes unavailable, the workspace stays locked and accepts the
-original password; it never silently falls back to plaintext.
-
-Encrypted storage uses a random 256-bit key and XChaCha20-Poly1305 with a fresh
-nonce for every write. Filenames are authenticated to reject swapped files.
-The password wraps the storage key using the existing Argon2id, HKDF-SHA256,
-and XChaCha20-Poly1305 vault format. The unencrypted `local-storage.json` contains
-the storage mode, directory identifier, and password-encrypted key, never the
-password. Keep both this file and its data directory together when backing up.
-There is no password reset or recovery if the password and system-secret entry
-are both lost.
-
-An encrypted data directory with a random identifier contains:
-
-- `workspace.json`: encrypted hosts, preferences, public key metadata, scripts, imported history, and sync state.
-- `keys/<uuid>` and `.pub` files: encrypted private and public keys. Any original SSH-key passphrase encryption is preserved underneath local encryption.
-- `known_hosts`: encrypted application-specific OpenSSH trust entries.
-
-Migration writes and verifies encrypted copies before committing the storage
-configuration, then removes the original plaintext files. Failed migration
-leaves the originals available; cleanup interrupted after commit is retried on
-unlock. Deletion does not erase old filesystem snapshots or backups. In the
-explicit no-encryption mode, the original filenames stay in the application
-directory and contain plaintext.
-
-On Windows, the application directory and keys directory use a protected DACL
-granting full access only to the current user's SID; new files inherit that
-restriction. Unix files continue to use `0600` and directories `0700`.
-
-SSH passwords, key passphrases, and sync credentials are not saved. Only the
-local storage password is saved in the system secret store when that mode is
-selected. OpenSSH requires ordinary files, so key generation/import and live
-sessions use private temporary directories containing only the required keys
-and trust records. These are removed when the operation/session finishes;
-Linux prefers `XDG_RUNTIME_DIR` (normally memory-backed), otherwise the OS
-temporary directory is used. A forced kill or OS crash can leave temporary
-copies behind. Local encryption protects persistent app files, not the memory
-or files accessible to processes running as your user while unlocked. The
-webview does not persist a separate browser workspace.
-
-Live SSH sessions, a live Tabby-Web account, release packaging, and non-Linux platforms require separate runtime validation; unit tests do not establish those claims.
+```sh
+cargo test --locked --lib local::tests::native_secret_store_roundtrip -- --ignored --exact
+```
