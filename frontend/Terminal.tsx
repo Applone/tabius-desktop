@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { native } from "./api";
+import { HostKeyPrompt, type HostKeyRequest } from "./HostKeyPrompt";
 import type { Forward, Host, Settings } from "./model";
 import "@xterm/xterm/css/xterm.css";
 export interface Session {
@@ -15,6 +16,8 @@ export interface Session {
 type Output =
   | { type: "data"; data: number[] }
   | { type: "exit"; code: number }
+  | { type: "trustchanged" }
+  | { type: "hostkey"; request: HostKeyRequest }
   | { type: "status"; status: string };
 export function TerminalPane({
   session,
@@ -23,6 +26,7 @@ export function TerminalPane({
   settings,
   onClose,
   onOS,
+  onTrustChanged,
 }: {
   session: Session;
   active: boolean;
@@ -30,6 +34,7 @@ export function TerminalPane({
   settings: Settings;
   onClose: () => void;
   onOS: (id: string, os: string) => void;
+  onTrustChanged: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
@@ -38,15 +43,25 @@ export function TerminalPane({
   settingsRef.current = settings;
   const osRef = useRef(onOS);
   osRef.current = onOS;
+  const trustRef = useRef(onTrustChanged);
+  trustRef.current = onTrustChanged;
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState("Connecting");
   const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [hostKey, setHostKey] = useState<HostKeyRequest | null>(null);
+  const hostKeyRef = useRef<HostKeyRequest | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   useEffect(() => {
     if (!container.current) return;
     setStatus(attempt ? "Reconnecting" : "Connecting");
+    setFailed(false);
+    setError("");
+    setHostKey(null);
+    hostKeyRef.current = null;
     let disposed = false;
+    let ended = false;
     let sessionId: string | undefined;
     const term = new XTerm({
       cursorBlink: true,
@@ -69,7 +84,7 @@ export function TerminalPane({
         "Compare this reference with SSH’s fingerprint before accepting a new host key.\r\n",
       );
     const input = term.onData((data) => {
-      if (sessionId)
+      if (sessionId && !hostKeyRef.current)
         void native("write_session", { id: sessionId, data }).catch((err) => {
           setError(String(err));
         });
@@ -99,8 +114,21 @@ export function TerminalPane({
     channel.onmessage = (message) => {
       if (disposed) return;
       if (message.type === "data") term.write(new Uint8Array(message.data));
-      else if (message.type === "status") setStatus(message.status);
-      else {
+      else if (message.type === "trustchanged") trustRef.current();
+      else if (message.type === "hostkey") {
+        hostKeyRef.current = message.request;
+        setHostKey(message.request);
+        setStatus("Awaiting host verification");
+        term.options.disableStdin = true;
+      } else if (message.type === "status") {
+        setStatus(message.status);
+        if (message.status === "Reconnecting" || message.status === "Running")
+          setFailed(false);
+      } else {
+        hostKeyRef.current = null;
+        setHostKey(null);
+        ended = true;
+        setFailed(message.code !== 0);
         setStatus("Disconnected");
         term.writeln(
           `\r\n\x1b[90mSession ended (exit ${message.code}).\x1b[0m`,
@@ -122,12 +150,15 @@ export function TerminalPane({
           return;
         }
         sessionId = id;
-        setStatus("Running");
-        if (activeRef.current) term.focus();
+        if (!ended && !hostKeyRef.current) {
+          setStatus("Running");
+          if (activeRef.current) term.focus();
+        }
       })
       .catch((err) => {
         if (!disposed) {
           setStatus("Failed");
+          setFailed(true);
           setError(String(err));
         }
       });
@@ -184,15 +215,18 @@ export function TerminalPane({
           {session.forward ? `${session.forward.kind} forwarding` : status}
         </span>
         <div className="spacer" />
-        <button
-          type="button"
-          onClick={() => {
-            setError("");
-            setAttempt((value) => value + 1);
-          }}
-        >
-          <ArrowClockwise size={16} /> Reconnect
-        </button>
+        {failed && (
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setFailed(false);
+              setAttempt((value) => value + 1);
+            }}
+          >
+            <ArrowClockwise size={16} /> Reconnect
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
@@ -203,6 +237,25 @@ export function TerminalPane({
         </button>
       </div>
       {error && <div className="inline-error">{error}</div>}
+      {hostKey && active && (
+        <HostKeyPrompt
+          key={hostKey.id}
+          request={hostKey}
+          sessionId={session.id}
+          references={session.fingerprints ?? []}
+          onAbort={onClose}
+          onAnswered={() => {
+            if (hostKeyRef.current?.id !== hostKey.id) return;
+            hostKeyRef.current = null;
+            setHostKey(null);
+            setStatus("Running");
+            if (terminalRef.current) {
+              terminalRef.current.options.disableStdin = false;
+              terminalRef.current.focus();
+            }
+          }}
+        />
+      )}
       <div
         className={`terminal-surface ${settings.theme.toLowerCase()}`}
         ref={container}

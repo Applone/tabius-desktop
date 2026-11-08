@@ -827,6 +827,7 @@ export function App() {
                   active={active === session.id}
                   focusRequest={focusRequest}
                   settings={workspace.settings}
+                  onTrustChanged={refreshKnown}
                   onClose={() => closeTab(session.id)}
                   onOS={(id, system) => {
                     void native<Workspace>("edit_workspace", {

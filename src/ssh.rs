@@ -118,17 +118,14 @@ pub fn args(
     }
     let mut args: Vec<String> = vec![
         "-F".into(),
-        if cfg!(windows) { "NUL" } else { "/dev/null" }.into(),
+        data.join("ssh_config").to_string_lossy().into_owned(),
         "-p".into(),
         host.port.to_string(),
     ];
     for option in [
-        format!(
-            "UserKnownHostsFile=\"{}\"",
-            data.join("known_hosts").display()
-        ),
+        "UserKnownHostsFile=none".into(),
         "GlobalKnownHostsFile=none".into(),
-        "StrictHostKeyChecking=ask".into(),
+        "StrictHostKeyChecking=yes".into(),
         "HashKnownHosts=no".into(),
         "ServerAliveInterval=15".into(),
         "ServerAliveCountMax=3".into(),
@@ -300,7 +297,7 @@ mod tests {
         let mut s = settings();
         s.post_quantum = false;
         let result = args(&host(), &s, None, Path::new("/tmp/data")).unwrap();
-        assert!(result.contains(&"StrictHostKeyChecking=ask".into()));
+        assert!(result.contains(&"StrictHostKeyChecking=yes".into()));
         assert!(result.contains(&"KexAlgorithms=-mlkem*,sntrup*".into()));
         assert!(result.windows(2).any(|a| a == ["--", "example.com"]));
     }

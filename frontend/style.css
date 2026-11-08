@@ -339,10 +339,10 @@ p {
   display: flex;
   align-items: stretch;
   gap: 4px;
-  height: 45px;
+  height: 50px;
   padding: 6px 10px 0;
   flex-shrink: 0;
-  overflow: auto;
+  overflow: hidden;
   border-bottom: 1px solid var(--lowest);
   background: var(--lowest);
 }
@@ -350,19 +350,24 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px;
+  padding: 0 12px;
   border-radius: 8px 8px 0 0;
   color: var(--muted);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
   font-size: 12px;
-  flex-shrink: 0;
+  flex: 1 1 200px;
+  min-width: 84px;
+  max-width: 240px;
 }
 .tab-list {
   display: flex;
   align-items: stretch;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
 }
 .session-tab[draggable="true"] {
   cursor: grab;
@@ -381,7 +386,8 @@ p {
   box-shadow: inset -3px 0 var(--accent);
 }
 .tab-title {
-  max-width: 180px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -463,16 +469,12 @@ p {
   color: var(--text);
 }
 .session-tab button {
-  background: transparent;
+  min-height: 24px;
+  min-width: 24px;
+  flex-shrink: 0;
   color: inherit;
   font-size: 12px;
   padding: 4px;
-}
-.session-tab button:hover {
-  color: var(--text);
-}
-.session-tab button[aria-label]:hover {
-  background: var(--raised);
 }
 .spacer {
   flex: 1;
@@ -1326,6 +1328,27 @@ button.paper:active {
 }
 .terminal-toolbar button {
   font-size: 11px;
+}
+.host-key-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 18px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.host-key-details dt {
+  color: var(--muted);
+}
+.host-key-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.host-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
 }
 .terminal-surface {
   flex: 1;

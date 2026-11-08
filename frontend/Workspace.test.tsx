@@ -35,9 +35,11 @@ const unmounts: string[] = [];
 function MockTerminal({
   session,
   active,
+  onTrustChanged,
 }: {
   session: { id: string };
   active: boolean;
+  onTrustChanged: () => void;
 }) {
   useEffect(() => {
     mounts.push(session.id);
@@ -48,6 +50,9 @@ function MockTerminal({
   return (
     <div className="xterm" data-active={active} data-session={session.id}>
       <textarea aria-label={`Terminal ${session.id}`} />
+      <button type="button" onClick={onTrustChanged}>
+        Accept test fingerprint
+      </button>
     </div>
   );
 }
@@ -400,6 +405,35 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
           ?.tagName,
       ).toBe("SPAN");
       expect(mounts).toEqual(["session-1"]);
+    });
+
+    test("session trust changes refresh the sidebar without navigating away", async () => {
+      await mount();
+      await openHost();
+      trustedHosts = [
+        {
+          line: "new",
+          host: "Alpha.example.com",
+          kind: "ssh-ed25519",
+          fingerprint: "SHA256:new",
+        },
+      ];
+      await click("button", "Accept test fingerprint");
+      expect(selectedTab()).toBe("Alpha");
+      expect(
+        container.querySelector(".sidebar nav button:nth-child(5) .nav-count")
+          ?.textContent,
+      ).toBe("1");
+      expect(
+        container
+          .querySelector('button[aria-label="Close Alpha"]')
+          ?.classList.contains("icon-button"),
+      ).toBe(true);
+      expect(
+        container
+          .querySelector('button[aria-label="New tab"]')
+          ?.classList.contains("icon-button"),
+      ).toBe(true);
     });
 
     test("tab shortcuts intercept xterm keys, preserve ordinary input, and close adjacent sessions", async () => {

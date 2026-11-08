@@ -152,6 +152,7 @@ export function Tabs({
             {item.id !== "library" && (
               <button
                 type="button"
+                className="icon-button"
                 aria-label={`Close ${item.label}`}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
@@ -167,7 +168,7 @@ export function Tabs({
       </div>
       <button
         type="button"
-        className="new-tab"
+        className="icon-button new-tab"
         aria-label="New tab"
         title="New tab"
         onClick={onNew}

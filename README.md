@@ -27,7 +27,8 @@ cargo build --release --locked
 Cargo installs frontend dependencies from the frozen Bun lockfile, checks
 TypeScript, and embeds the built UI. No frontend development server is required.
 The release executable is `target/release/tabius-desktop` (`.exe` on Windows).
-Windows requires OpenSSH Client; Mosh requires a local client and remote server.
+OpenSSH 8.5+ is required, including Windows OpenSSH Client. Mosh requires a local
+client and remote server.
 
 ## Releases
 
@@ -61,7 +62,10 @@ are preserved. Unsupported options are reported, and hosts requiring
 Host chaining copies a saved host's endpoint and preceding hops; select it again
 after changing that host. Jump hosts use the SSH agent or default identity files;
 managed key assignments apply to the destination. The SSH proxy field accepts
-an SSH hop. New server keys require confirmation; changed keys block connection.
+an SSH hop. New server keys open a fingerprint dialog: abort login, continue once,
+or trust and continue to save the key in Known Hosts. Temporary trust expires when
+the connection ends; reconnects ask again. Jump hosts use the same verification.
+Changed keys block connection and cannot be approved through this dialog.
 
 | Action                     | Default shortcut              |
 | -------------------------- | ----------------------------- |

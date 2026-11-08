@@ -1,3 +1,4 @@
+mod host_key;
 mod local;
 mod migration;
 mod pty;
@@ -10,6 +11,7 @@ mod vault;
 mod workspace;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
+pub use host_key::helper as host_key_helper;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,6 +32,7 @@ struct Session {
     master: pty::Terminal,
     pid: u32,
     cancelled: Arc<AtomicBool>,
+    approvals: Arc<host_key::Approvals>,
     rows: u16,
     cols: u16,
 }
@@ -95,6 +98,8 @@ enum Output {
     Data { data: Vec<u8> },
     Exit { code: i32 },
     Status { status: String },
+    TrustChanged,
+    HostKey { request: host_key::Request },
 }
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -112,7 +117,33 @@ fn start_session(
     ssh::valid_id(&id)?;
     let scratch = local::scratch()?;
     let session_directory = scratch.path();
-    let mut initial_known = local::stage_session(&app, session_directory, &host.key_id)?;
+    local::stage_session(&app, session_directory, &host.key_id)?;
+    host_key::config(
+        session_directory,
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let lookup_app = app.clone();
+    let lookup_directory = session_directory.to_path_buf();
+    let save_app = app.clone();
+    let save_directory = session_directory.to_path_buf();
+    let trust_output = on_output.clone();
+    let prompt_output = on_output.clone();
+    let broker = host_key::Broker::start(
+        cancelled.clone(),
+        move |host| lookup_session_trust(&lookup_app, &lookup_directory, host),
+        move |entry| {
+            save_session_trust(&save_app, &save_directory, entry)?;
+            trust_output
+                .send(Output::TrustChanged)
+                .map_err(|e| e.to_string())
+        },
+        move |request| {
+            prompt_output
+                .send(Output::HostKey { request })
+                .map_err(|e| e.to_string())
+        },
+    )?;
     let arguments = ssh::args(&host, &settings, forward.as_ref(), session_directory)?;
     let mosh = host.mosh && forward.is_none();
     let ssh_program = ssh::program("ssh")?;
@@ -149,13 +180,13 @@ fn start_session(
     cmd.env("TERM", &settings.emulator)
         .env_remove("SSH_ASKPASS")
         .env("SSH_ASKPASS_REQUIRE", "never");
+    broker.configure(&mut cmd);
     let mut map = sessions.0.lock().map_err(|e| e.to_string())?;
     if map.contains_key(&id) {
         return Err("Session already exists.".into());
     }
     let process = pty::spawn(&mut cmd, rows, cols)?;
     let mut pid = process.child.id();
-    let cancelled = Arc::new(AtomicBool::new(false));
     let mut reader = process.master.try_clone().map_err(|e| e.to_string())?;
     map.insert(
         id.clone(),
@@ -163,6 +194,7 @@ fn start_session(
             master: process.master,
             pid,
             cancelled: cancelled.clone(),
+            approvals: broker.approvals.clone(),
             rows,
             cols,
         },
@@ -173,17 +205,13 @@ fn start_session(
     let mut child = process.child;
     std::thread::spawn(move || {
         let session_files = scratch;
+        let _host_keys = broker;
         loop {
             let mut buffer = [0; 16384];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if let Err(error) =
-                            merge_session_trust(&app, session_files.path(), &mut initial_known)
-                        {
-                            let _ = on_output.send(Output::Status { status: error });
-                        }
                         if on_output
                             .send(Output::Data {
                                 data: buffer[..n].to_vec(),
@@ -204,10 +232,6 @@ fn start_session(
                 .ok()
                 .map(|s| s.exit_code() as i32)
                 .unwrap_or(-1);
-            if let Err(error) = merge_session_trust(&app, session_files.path(), &mut initial_known)
-            {
-                let _ = on_output.send(Output::Status { status: error });
-            }
             let reconnect = code == 255
                 && load_workspace(app.clone())
                     .is_ok_and(|w| w["settings"]["autoReconnect"] == true);
@@ -247,12 +271,10 @@ fn start_session(
                 return;
             }
             let (rows, cols) = (session.rows, session.cols);
+            session.approvals.clear_temporary();
             // Re-read trust and keys so reconnect cannot reuse revoked credentials.
             let attempt = local::stage_session(&app, session_files.path(), &host.key_id)
-                .and_then(|known| {
-                    initial_known = known;
-                    pty::spawn(&mut cmd, rows, cols)
-                })
+                .and_then(|_| pty::spawn(&mut cmd, rows, cols))
                 .and_then(|process| {
                     let reader = process.master.try_clone().map_err(|e| e.to_string())?;
                     Ok((process, reader))
@@ -305,6 +327,22 @@ fn write_session(sessions: State<'_, Sessions>, id: String, data: String) -> Res
         .master
         .write_all(data.as_bytes())
         .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn answer_host_key(
+    sessions: State<'_, Sessions>,
+    id: String,
+    request_id: String,
+    decision: host_key::Decision,
+) -> Result<()> {
+    sessions
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&id)
+        .ok_or("Session is no longer running.")?
+        .approvals
+        .answer(&request_id, decision)
 }
 #[tauri::command]
 fn remove_item(
@@ -425,32 +463,42 @@ fn persist_key(app: &tauri::AppHandle, source: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
-fn merge_session_trust(app: &tauri::AppHandle, scratch: &Path, initial: &mut String) -> Result<()> {
-    let content = fs::read_to_string(scratch.join("known_hosts")).map_err(|e| e.to_string())?;
-    let added: Vec<_> = content
-        .lines()
-        .filter(|line| !initial.lines().any(|old| old == *line))
-        .collect();
-    if added.is_empty() {
-        return Ok(());
+fn lookup_session_trust(app: &tauri::AppHandle, scratch: &Path, host: &str) -> Result<String> {
+    let path = data_dir(app)?.join("known_hosts");
+    let content = if path.exists() {
+        local::text(app, &path)?
+    } else {
+        String::new()
+    };
+    let verification = scratch.join("verification_known_hosts");
+    local::atomic_write(&verification, content.as_bytes())?;
+    host_key::lookup_file(&verification, host)
+}
+fn save_session_trust(app: &tauri::AppHandle, scratch: &Path, entry: &str) -> Result<()> {
+    let key = parse_known(entry)?;
+    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
+    let known = lookup_session_trust(app, scratch, &key.host)?;
+    if !known.is_empty() {
+        if known.lines().any(|line| {
+            parse_known(line).is_ok_and(|previous| {
+                previous.fingerprint == key.fingerprint && previous.kind == key.kind
+            })
+        }) {
+            return Ok(());
+        }
+        return Err(
+            "The trusted host key changed while confirmation was open. Login blocked.".into(),
+        );
     }
     let path = data_dir(app)?.join("known_hosts");
-    // Serialize trust merges independently of file encryption to avoid lost session updates.
-    let _guard = TRUST.lock().map_err(|e| e.to_string())?;
     let mut current = if path.exists() {
         local::text(app, &path)?
     } else {
         String::new()
     };
-    for line in added {
-        parse_known(line)?;
-        if !current.lines().any(|old| old == line) {
-            current.push('\n');
-            current.push_str(line);
-        }
-    }
+    current.push('\n');
+    current.push_str(entry);
     local::write(app, &path, current.as_bytes())?;
-    *initial = content;
     Ok(())
 }
 fn generate_private_key(path: &Path, name: &str, kind: &str, passphrase: &str) -> Result<()> {
@@ -882,6 +930,7 @@ pub fn run() {
             load_workspace,
             save_workspace,
             start_session,
+            answer_host_key,
             write_session,
             run_snippet,
             resize_session,
@@ -910,6 +959,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trust_change_notification_matches_the_terminal_channel_contract() {
+        assert_eq!(
+            serde_json::to_value(Output::TrustChanged).unwrap(),
+            serde_json::json!({"type": "trustchanged"})
+        );
+    }
 
     #[test]
     fn cancelling_a_session_interrupts_its_pending_retry() {
