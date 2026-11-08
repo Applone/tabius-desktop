@@ -351,23 +351,44 @@ p {
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border-radius: 8px 8px 0 0;
+  height: 32px;
+  border-radius: 9px;
   color: var(--muted);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
   font-size: 12px;
-  flex: 1 1 200px;
-  min-width: 84px;
-  max-width: 240px;
+  flex: 0 0 auto;
+  width: 168px;
+  min-width: 112px;
+}
+.session-tab.navigation-tab {
+  width: 88px;
+  min-width: 88px;
 }
 .tab-list {
   display: flex;
-  align-items: stretch;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   flex: 1;
   min-width: 0;
+}
+.navigation-tabs,
+.session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.navigation-tabs {
+  flex: 0 0 auto;
+}
+.session-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow-x: auto;
+}
+.session-tabs:empty {
+  display: none;
 }
 .session-tab[draggable="true"] {
   cursor: grab;
@@ -465,8 +486,12 @@ p {
   background: var(--panel);
 }
 .session-tab.active {
+  width: 216px;
   background: var(--bg);
   color: var(--text);
+}
+.session-tab.navigation-tab.active {
+  width: 140px;
 }
 .session-tab button {
   min-height: 24px;
@@ -1437,6 +1462,7 @@ button.paper:active {
 }
 .session-tab {
   transition:
+    width 180ms var(--ease-out),
     background-color 180ms ease,
     color 180ms ease;
 }
@@ -1521,4 +1547,448 @@ button.paper:active {
     animation: none;
     transition: none;
   }
+}
+
+/* Workspace chrome stays above the Library and live terminal surfaces. */
+.app-shell {
+  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
+}
+.app-shell > .tabbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: 48px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+.app-shell > .sidebar {
+  grid-column: 1;
+  grid-row: 2;
+}
+.app-shell > .main {
+  grid-column: 2;
+  grid-row: 2;
+}
+.app-shell.workspace-open > .main {
+  grid-column: 1 / -1;
+}
+.sidebar[hidden],
+.terminal-workspace[hidden],
+.sftp-container[hidden] {
+  display: none;
+}
+.brand {
+  height: 76px;
+  font-size: 25px;
+}
+.tools-toggle {
+  margin-left: auto;
+  align-self: center;
+  margin-bottom: 5px;
+}
+.terminal-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.terminal-deck {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.session-container {
+  min-width: 0;
+}
+.session-tools {
+  width: 292px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--lowest);
+  min-height: 0;
+}
+.session-tools > :where(header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  min-height: 52px;
+}
+.session-tools > :where(nav) {
+  display: flex;
+  padding: 0 10px;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.session-tools > :where(nav) :where(button) {
+  flex: 1;
+  padding: 9px 6px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+}
+.session-tools > :where(nav) :where(button).chosen {
+  border-bottom-color: var(--accent);
+  color: var(--accent-hover);
+}
+.tools-content {
+  padding: 16px;
+  overflow: auto;
+  flex: 1;
+}
+.tools-content .theme-options {
+  grid-template-columns: 1fr;
+}
+.tools-add {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+}
+.tool-command {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.tool-command :where(strong) {
+  font-weight: 500;
+}
+.tool-command :where(pre) {
+  padding: 10px;
+  border-radius: 5px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px / 1.7 var(--mono);
+  color: var(--secondary);
+}
+.tool-command :where(button) {
+  font-size: 11px;
+  background: transparent;
+  color: var(--accent-hover);
+  padding-left: 0;
+}
+.tools-empty {
+  padding: 48px 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.tools-empty :where(h3) {
+  font-size: 14px;
+  color: var(--text);
+  margin-top: 16px;
+}
+.tools-empty :where(p) {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.session-tools > :where(footer) {
+  padding: 12px 16px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+.sftp-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.sftp-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.sftp-heading {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--border);
+}
+.sftp-heading > :where(div) {
+  flex: 1;
+}
+.sftp-heading :where(h1) {
+  font-size: 23px;
+  margin: 0 0 5px;
+  letter-spacing: -0.6px;
+}
+.sftp-heading :where(p) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sftp-heading > :where(input) {
+  width: 190px;
+}
+.sftp-hidden {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.sftp-hidden :where(input) {
+  width: 14px;
+  min-height: 14px;
+  accent-color: var(--accent);
+}
+.file-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.file-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.file-pane + .file-pane {
+  border-left: 1px solid var(--border-strong);
+}
+.file-pane-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 22px;
+  min-height: 76px;
+}
+.file-pane-heading > :where(svg) {
+  color: var(--accent-hover);
+}
+.file-pane-heading > :where(div) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.file-pane-heading :where(strong) {
+  font-size: 13px;
+  font-weight: 500;
+}
+.file-pane-heading :where(span) {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-path {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 16px 12px;
+}
+.file-path :where(input) {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--lowest);
+}
+.file-actions {
+  display: flex;
+  gap: 5px;
+  padding: 0 18px 12px;
+  flex-wrap: wrap;
+}
+.file-actions :where(button) {
+  padding: 4px 8px;
+  min-height: 28px;
+  font-size: 11px;
+  background: transparent;
+}
+.file-actions :where(button):last-child {
+  margin-left: auto;
+  color: var(--accent-hover);
+}
+.file-table-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.file-table :where(th) {
+  position: sticky;
+  top: 0;
+  background: var(--lowest);
+  color: var(--muted);
+  text-align: left;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 10px 12px;
+}
+.file-table :where(th):first-child {
+  width: 58%;
+  padding-left: 22px;
+}
+.file-table :where(th):nth-child(2) {
+  width: 18%;
+}
+.file-table :where(td) {
+  padding: 0 12px;
+  height: 39px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border);
+}
+.file-table :where(td):first-child {
+  padding: 0;
+}
+.file-table :where(td) :where(button) {
+  justify-content: flex-start;
+  width: 100%;
+  height: 39px;
+  padding: 0 12px 0 22px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 450;
+}
+.file-table :where(td) :where(button) > :where(span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-table :where(td) :where(svg) {
+  color: var(--secondary);
+}
+.file-table :where(tr):hover {
+  background: var(--panel);
+}
+.file-table :where(tr).selected {
+  background: #2091f61c;
+}
+.file-empty {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.file-footer {
+  display: flex;
+  gap: 15px;
+  justify-content: space-between;
+  padding: 12px 20px;
+  color: var(--muted);
+  font-size: 10px;
+  border-top: 1px solid var(--border);
+}
+.file-footer :where(span) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.remote-picker {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  flex: 1;
+  padding: clamp(24px, 5vh, 64px) 24px 24px;
+  overflow: auto;
+}
+.remote-symbol {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border: 1px solid var(--border-strong);
+  background: var(--lowest);
+  border-radius: 18px;
+  color: var(--accent-hover);
+  margin-bottom: 10px;
+}
+.remote-picker :where(h2) {
+  font-size: 19px;
+  margin: 16px 0 4px;
+  letter-spacing: -0.4px;
+}
+.remote-picker > :where(p) {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  max-width: 270px;
+  line-height: 1.6;
+}
+.sftp-hosts {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sftp-hosts :where(button) {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: var(--panel);
+}
+.sftp-hosts :where(button) > :where(span) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sftp-hosts :where(small) {
+  color: var(--muted);
+  font-weight: 450;
+}
+.transfer-status {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  background: var(--lowest);
+}
+.sftp-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 10px 24px;
+  color: var(--danger);
+  background: var(--lowest);
+  font-size: 12px;
+}
+@media (max-width: 1050px) {
+  .session-tools {
+    width: 250px;
+  }
+  .sftp-heading {
+    padding: 18px;
+    gap: 12px;
+  }
+  .sftp-heading > :where(input) {
+    width: 150px;
+  }
+  .file-table :where(th):first-child {
+    width: 65%;
+  }
+  .file-table :where(th):nth-child(2) {
+    width: 35%;
+  }
+  .file-table :where(th):nth-child(3),
+  .file-table :where(td):nth-child(3) {
+    display: none;
+  }
+}
+.file-table :where(tr).selected :where(td) :where(button) {
+  color: var(--accent-hover);
 }

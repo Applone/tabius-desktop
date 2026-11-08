@@ -95,6 +95,21 @@ let trustedHosts: KnownHost[] = [];
 let sequence = 0;
 const invoke = mock(
   async (name: string, args?: Record<string, unknown>): Promise<unknown> => {
+    if (name === "sftp_list")
+      return {
+        path: args?.id ? "/srv" : "/home/local",
+        entries: [
+          { name: "projects", directory: true, size: 0, modified: 0 },
+          { name: "notes.txt", directory: false, size: 2048, modified: 0 },
+        ],
+      };
+    if (
+      name === "sftp_connect" ||
+      name === "sftp_disconnect" ||
+      name === "sftp_transfer" ||
+      name === "write_session"
+    )
+      return;
     if (name === "known_hosts") return trustedHosts;
     if (name === "display_known") return args?.known ?? [];
     if (name === "prepare_session")
@@ -173,6 +188,10 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       Object.defineProperty(globalThis, "navigator", {
         configurable: true,
         value: { platform },
+      });
+      Reflect.set(window, "__TAURI_INTERNALS__", {
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
       });
       workspace = {
         hosts: [host("Alpha", "production"), host("Beta")],
@@ -357,7 +376,8 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       expect(adjacentTab([{ id: "a" }], "a")).toBe("library");
       expect(cycleTab(items, "c", 1)).toBe("library");
       expect(cycleTab(items, "library", -1)).toBe("c");
-      expect(cycleTab([], "library", 1)).toBe("library");
+      expect(cycleTab([], "library", 1)).toBe("sftp");
+      expect(cycleTab([], "sftp", 1)).toBe("library");
     });
 
     test("sidebar counts load before visiting pages and refresh known hosts on entry", async () => {
@@ -475,11 +495,83 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       expect(container.querySelector("h1")?.textContent).toBe("Snippets");
     });
 
+    test("terminal tools and SFTP preserve sessions while freeing Library navigation", async () => {
+      workspace.snippets = [
+        { id: "snippet", name: "Who am I", command: "whoami" },
+      ];
+      await mount();
+      await openHost();
+      expect(container.querySelector<HTMLElement>(".sidebar")?.hidden).toBe(
+        true,
+      );
+      expect(container.querySelector(".session-tools")?.textContent).toContain(
+        "Who am I",
+      );
+      await click(".session-tools button", "Run in terminal");
+      expect(invoke).toHaveBeenCalledWith("write_session", {
+        id: "session-1",
+        data: "whoami\r",
+      });
+      await click(".session-tools button", "Themes");
+      await click(".session-tools button", "Paper");
+      expect(workspace.settings.theme).toBe("Paper");
+      await click('[role="tab"]', "SFTP");
+      expect(
+        container.querySelector('[aria-label="Local files"]')?.textContent,
+      ).toContain("notes.txt");
+      expect(
+        container.querySelector('[aria-label="Remote files"]')?.textContent,
+      ).toContain("Connect to a host");
+      await click(".sftp-hosts button");
+      expect(
+        container.querySelector('[aria-label="Remote files"] table'),
+      ).not.toBeNull();
+      await click('[aria-label="Local files"] td button', "notes.txt");
+      await click('[aria-label="Local files"] button', "Upload");
+      const transfer = invoke.mock.calls.find(
+        ([command]) => command === "sftp_transfer",
+      );
+      expect(transfer?.[1]).toMatchObject({
+        local: "/home/local/notes.txt",
+        remote: "/srv/notes.txt",
+        upload: true,
+      });
+      await click('[role="tab"]', "Alpha");
+      expect(mounts).toEqual(["session-1"]);
+      expect(unmounts).toEqual([]);
+      await click('[role="tab"]', "Library");
+      expect(container.querySelector<HTMLElement>(".sidebar")?.hidden).toBe(
+        false,
+      );
+    });
+
+    test("arrow keys navigate between fixed navigation and scrollable session tabs", async () => {
+      await mount();
+      await openHost();
+      await openHost(1);
+      await click('[role="tab"]', "SFTP");
+      const tab = () =>
+        container.querySelector('[role="tab"][aria-selected="true"]');
+      await key("ArrowRight", {}, tab() ?? window);
+      expect(selectedTab()).toBe("Alpha");
+      expect(document.activeElement).toBe(tab());
+      await key("ArrowLeft", {}, tab() ?? window);
+      expect(selectedTab()).toBe("SFTP");
+      expect(document.activeElement).toBe(tab());
+      await key("End", {}, tab() ?? window);
+      expect(selectedTab()).toBe("Beta");
+      await key("Home", {}, tab() ?? window);
+      expect(selectedTab()).toBe("Library");
+      expect(document.activeElement).toBe(tab());
+      expect(mounts).toEqual(["session-1", "session-2"]);
+      expect(unmounts).toEqual([]);
+    });
+
     test("dragging reorders live sessions without reconnecting or changing the active tab", async () => {
       await mount();
       await openHost();
       await openHost(1);
-      const tabs = container.querySelectorAll('[role="tab"]');
+      const tabs = container.querySelectorAll('[role="tab"][draggable="true"]');
       const transfer = new browser.DataTransfer();
       const drag = (type: string) => {
         const event = new window.Event(type, {
@@ -493,15 +585,15 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         return event;
       };
       await act(async () => {
-        tabs[1].dispatchEvent(drag("dragstart"));
-        tabs[2].dispatchEvent(drag("dragover"));
-        tabs[2].dispatchEvent(drag("drop"));
+        tabs[0].dispatchEvent(drag("dragstart"));
+        tabs[1].dispatchEvent(drag("dragover"));
+        tabs[1].dispatchEvent(drag("drop"));
       });
       expect(
         [...container.querySelectorAll('[role="tab"]')].map((tab) =>
           tab.getAttribute("aria-label"),
         ),
-      ).toEqual(["Library", "Beta", "Alpha"]);
+      ).toEqual(["Library", "SFTP", "Beta", "Alpha"]);
       expect(selectedTab()).toBe("Beta");
       expect(mounts).toEqual(["session-1", "session-2"]);
       expect(unmounts).toEqual([]);

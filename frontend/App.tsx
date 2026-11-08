@@ -38,7 +38,9 @@ import type {
   Snippet,
   Workspace,
 } from "./model";
+import { SessionTools } from "./SessionTools";
 import { SettingsView } from "./Settings";
+import { SFTP } from "./SFTP";
 import { SSHConfigImport } from "./SSHConfigImport";
 import { useShortcuts } from "./shortcuts";
 import { adjacentTab, cycleTab, reorderTabs, Tabs } from "./Tabs";
@@ -76,6 +78,8 @@ export function App() {
   const [importingSSH, setImportingSSH] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState("library");
+  const [toolsOpen, setToolsOpen] = useState(true);
+  const [sftpVisited, setSftpVisited] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const [notice, setNotice] = useState("");
   const [known, setKnown] = useState<KnownHost[]>([]);
@@ -199,6 +203,7 @@ export function App() {
     });
   }
   function selectTab(id: string, focusTerminal = true) {
+    if (id === "sftp") setSftpVisited(true);
     setActive(id);
     if (focusTerminal) setFocusRequest((value) => value + 1);
   }
@@ -212,7 +217,12 @@ export function App() {
     loaded && !syncing && !editor && !confirm && !importingSSH && !choosingHost,
     (action) => {
       if (action === "newTab") setChoosingHost(true);
-      else if (action === "closeTab" && active !== "library") closeTab(active);
+      else if (
+        action === "closeTab" &&
+        active !== "library" &&
+        active !== "sftp"
+      )
+        closeTab(active);
       else if (action === "nextTab" || action === "previousTab")
         selectTab(cycleTab(sessions, active, action === "nextTab" ? 1 : -1));
       else if (action === "snippets" || action === "library") {
@@ -242,8 +252,25 @@ export function App() {
     displayedKnown.length,
   ];
   return (
-    <div className="app-shell">
-      <aside className="sidebar" inert={syncing}>
+    <div
+      className={`app-shell ${active === "library" ? "library-open" : "workspace-open"}`}
+    >
+      {loaded && (
+        <Tabs
+          sessions={sessions}
+          active={active}
+          disabled={syncing}
+          onSelect={selectTab}
+          onTools={() => setToolsOpen((open) => !open)}
+          toolsOpen={toolsOpen}
+          onClose={closeTab}
+          onNew={() => setChoosingHost(true)}
+          onReorder={(source, target, after) =>
+            setSessions((items) => reorderTabs(items, source, target, after))
+          }
+        />
+      )}
+      <aside className="sidebar" hidden={active !== "library"} inert={syncing}>
         <div className="brand">
           <div className="brand-mark">
             <Terminal size={23} weight="bold" />
@@ -297,19 +324,6 @@ export function App() {
         </div>
       </aside>
       <main className="main">
-        {loaded && (
-          <Tabs
-            sessions={sessions}
-            active={active}
-            disabled={syncing}
-            onSelect={selectTab}
-            onClose={closeTab}
-            onNew={() => setChoosingHost(true)}
-            onReorder={(source, target, after) =>
-              setSessions((items) => reorderTabs(items, source, target, after))
-            }
-          />
-        )}
         {loadError ? (
           <div className="empty-state">
             <Warning size={30} />
@@ -816,32 +830,56 @@ export function App() {
                 )}
               </div>
             </section>
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="session-container"
-                hidden={activeSession?.id !== session.id}
-              >
-                <TerminalPane
-                  session={session}
-                  active={active === session.id}
-                  focusRequest={focusRequest}
-                  settings={workspace.settings}
-                  onTrustChanged={refreshKnown}
-                  onClose={() => closeTab(session.id)}
-                  onOS={(id, system) => {
-                    void native<Workspace>("edit_workspace", {
-                      workspace: workspaceRef.current,
-                      kind: "os",
-                      item: { id, system },
-                      remove: false,
-                    })
-                      .then(update)
-                      .catch((err) => setNotice(String(err)));
-                  }}
-                />
+            {sftpVisited && (
+              <div className="sftp-container" hidden={active !== "sftp"}>
+                <SFTP workspace={workspace} onTrustChanged={refreshKnown} />
               </div>
-            ))}
+            )}
+            <div className="terminal-workspace" hidden={!activeSession}>
+              <div className="terminal-deck">
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="session-container"
+                    hidden={activeSession?.id !== session.id}
+                  >
+                    <TerminalPane
+                      session={session}
+                      active={active === session.id}
+                      focusRequest={focusRequest}
+                      settings={workspace.settings}
+                      onTrustChanged={refreshKnown}
+                      onClose={() => closeTab(session.id)}
+                      onOS={(id, system) => {
+                        void native<Workspace>("edit_workspace", {
+                          workspace: workspaceRef.current,
+                          kind: "os",
+                          item: { id, system },
+                          remove: false,
+                        })
+                          .then(update)
+                          .catch((err) => setNotice(String(err)));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              {activeSession && !activeSession.forward && toolsOpen && (
+                <SessionTools
+                  workspace={workspace}
+                  sessionId={activeSession.id}
+                  onTheme={(theme) =>
+                    update({
+                      ...workspace,
+                      settings: { ...workspace.settings, theme },
+                    })
+                  }
+                  onNewSnippet={() => void createEditor("snippet")}
+                  onImportHistory={() => setEditor({ type: "history" })}
+                  onClose={() => setToolsOpen(false)}
+                />
+              )}
+            </div>
           </>
         )}
       </main>

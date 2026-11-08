@@ -2,6 +2,7 @@ mod host_key;
 mod local;
 mod migration;
 mod pty;
+mod sftp;
 mod ssh;
 mod ssh_config;
 mod storage;
@@ -910,8 +911,15 @@ fn apply_sync(app: tauri::AppHandle, previous: Value, workspace: Value) -> Resul
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(Sessions::default())
+        .manage(sftp::Connections::default())
         .manage(local::LocalStorage::default())
         .invoke_handler(tauri::generate_handler![
+            sftp::sftp_connect,
+            sftp::sftp_answer,
+            sftp::sftp_disconnect,
+            sftp::sftp_list,
+            sftp::sftp_modify,
+            sftp::sftp_transfer,
             workspace::new_item,
             workspace::edit_workspace,
             remove_item,
@@ -944,6 +952,7 @@ pub fn run() {
         .expect("Unable to initialize Tabius");
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            sftp::shutdown(app);
             let sessions = app.state::<Sessions>();
             if let Ok(map) = sessions.0.lock() {
                 for session in map.values() {

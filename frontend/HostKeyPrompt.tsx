@@ -14,7 +14,9 @@ export function HostKeyPrompt({
   references,
   onAnswered,
   onAbort,
+  command = "answer_host_key",
 }: {
+  command?: string;
   request: HostKeyRequest;
   sessionId: string;
   references: string[];
@@ -28,7 +30,7 @@ export function HostKeyPrompt({
     setBusy(true);
     setError("");
     try {
-      await native("answer_host_key", {
+      await native(command, {
         id: sessionId,
         requestId: request.id,
         decision,

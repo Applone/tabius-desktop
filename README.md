@@ -5,7 +5,9 @@ A desktop SSH client built with Rust, Tauri 2, React, and xterm.js.
 - Saved hosts and groups, SSH jump hosts, and optional Mosh support.
 - Managed SSH keys, local/remote/SOCKS forwarding, and verified host fingerprints.
 - Snippets, Bash/Zsh history import, and OpenSSH configuration import.
-- Draggable session tabs, configurable shortcuts, themes, and reconnect.
+- Terminal workspace with draggable tabs and a collapsible snippets, history, and themes panel.
+- Two-pane SFTP browser with local/remote navigation and file transfers.
+- Configurable shortcuts, themes, and reconnect.
 - Encrypted local storage and optional Tabby-Web-compatible configuration sync.
 
 ## Build and run
@@ -53,6 +55,24 @@ Tag pushes publish releases after checks pass. Tags must match the versions in
 Double-click a host to connect, or focus it and press Enter/Space. Drag tabs to
 reorder sessions. The plus button opens a host picker searchable by name,
 address, or group. Deleting a group keeps its hosts in Ungrouped.
+
+The top bar provides **Library**, **SFTP**, and your terminal tabs. Library contains
+hosts, keychain, forwarding, snippets, known hosts, and settings; its navigation
+is hidden during terminal and SFTP work. Toggle Session tools at the top right
+for snippets, imported shell history, and terminal themes. Run sends the selected
+command to the active terminal for immediate execution.
+
+Open **SFTP** to browse this computer on the left and choose a saved host on the
+right. SFTP uses OpenSSH key or agent authentication (password and interactive
+key-passphrase prompts are not supported; unlock encrypted keys in your SSH
+agent first). Unknown fingerprints use the same verification dialog as SSH.
+Double-click folders or enter a path, select a file, then Upload or Download.
+Transfers never replace existing files. Downloads publish only after completion;
+a failed upload may leave a partial remote file, which can be deleted before
+retrying. Folder transfers are not recursive. Both panes support new folders,
+renaming, deletion of files and empty folders, filtering, and hidden files.
+The SFTP connection stays open when switching tabs; use its disconnect button
+when finished.
 
 Import hosts and managed keys through **Hosts → Import SSH config**. Review the
 preview and warnings before importing; existing hosts and original key files
