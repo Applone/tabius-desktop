@@ -10,7 +10,7 @@ import {
 import { Window as HappyWindow } from "happy-dom";
 import { act, useEffect } from "react";
 import * as originalApi from "./api";
-import type { Host, Settings, Workspace } from "./model";
+import type { Host, KnownHost, Settings, Workspace } from "./model";
 import {
   chordLabel,
   keyChord,
@@ -86,10 +86,12 @@ function host(id: string, groupId = ""): Host {
   };
 }
 let workspace: Workspace;
+let trustedHosts: KnownHost[] = [];
 let sequence = 0;
 const invoke = mock(
   async (name: string, args?: Record<string, unknown>): Promise<unknown> => {
-    if (name === "display_known" || name === "known_hosts") return [];
+    if (name === "known_hosts") return trustedHosts;
+    if (name === "display_known") return args?.known ?? [];
     if (name === "prepare_session")
       return { id: `session-${++sequence}`, host: args?.host };
     if (name === "new_item")
@@ -132,7 +134,7 @@ const save = mock(async (next: Workspace) => {
 });
 mock.module("./api", () => ({
   ...api,
-  desktop: false,
+  desktop: true,
   loadWorkspace: async () => workspace,
   saveWorkspace: save,
   native: invoke,
@@ -177,6 +179,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         settings: { ...settings },
       };
       sequence = 0;
+      trustedHosts = [];
       mounts.length = 0;
       unmounts.length = 0;
       invoke.mockClear();
@@ -350,6 +353,34 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       expect(cycleTab(items, "c", 1)).toBe("library");
       expect(cycleTab(items, "library", -1)).toBe("c");
       expect(cycleTab([], "library", 1)).toBe("library");
+    });
+
+    test("sidebar counts load before visiting pages and refresh known hosts on entry", async () => {
+      workspace.snippets = [
+        { id: "status", name: "Status", command: "uptime" },
+      ];
+      trustedHosts = [
+        {
+          line: "1",
+          host: "alpha.example.com",
+          kind: "ssh-ed25519",
+          fingerprint: "SHA256:test",
+        },
+      ];
+      await mount();
+      const counts = () =>
+        [...container.querySelectorAll(".sidebar nav .nav-count")].map(
+          (item) => item.textContent,
+        );
+      expect(container.querySelector("h1")?.textContent).toBe("Hosts");
+      expect(counts()).toEqual(["2", "1", "1"]);
+      expect(invoke).toHaveBeenCalledWith("known_hosts");
+      await click(".sidebar nav button:nth-child(4)");
+      expect(container.querySelector("h1")?.textContent).toBe("Snippets");
+      expect(counts()).toEqual(["2", "1", "1"]);
+      trustedHosts = [];
+      await click(".sidebar nav button:nth-child(5)");
+      expect(counts()).toEqual(["2", "1"]);
     });
 
     test("new tab shortcut searches by group and opens a session with Enter", async () => {

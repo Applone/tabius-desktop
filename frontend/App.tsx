@@ -117,8 +117,11 @@ export function App() {
         .catch((err) => setNotice(String(err)));
   }, []);
   useEffect(() => {
-    if (page === "Known hosts") refreshKnown();
-  }, [page, refreshKnown]);
+    if (loaded) refreshKnown();
+  }, [loaded, refreshKnown]);
+  useEffect(() => {
+    if (loaded && page === "Known hosts") refreshKnown();
+  }, [loaded, page, refreshKnown]);
   async function connect(host: Host, forward?: Forward) {
     try {
       const session = await native<Session>("prepare_session", {
@@ -270,7 +273,9 @@ export function App() {
                 aria-hidden="true"
               />
               <span>{name}</span>
-              {counts[i] > 0 && <span className="nav-count">{counts[i]}</span>}
+              {loaded && counts[i] > 0 && (
+                <span className="nav-count">{counts[i]}</span>
+              )}
             </button>
           ))}
         </nav>
