@@ -7,6 +7,7 @@ import {
   Code,
   Copy,
   Fingerprint,
+  FolderPlus,
   GearSix,
   Key,
   PencilSimple,
@@ -27,10 +28,20 @@ import forwardingIcon from "./assets/tabius/port-forwarding.svg";
 import snippetsIcon from "./assets/tabius/snippets.svg";
 import type { Editor } from "./Editors";
 import { EditorModal } from "./Editors";
-import { HostCard } from "./HostCard";
-import type { Forward, Host, KnownHost, Snippet, Workspace } from "./model";
+import { HostLibrary } from "./HostLibrary";
+import { HostPicker } from "./HostPicker";
+import type {
+  Forward,
+  Host,
+  HostGroup,
+  KnownHost,
+  Snippet,
+  Workspace,
+} from "./model";
 import { SettingsView } from "./Settings";
 import { SSHConfigImport } from "./SSHConfigImport";
+import { useShortcuts } from "./shortcuts";
+import { adjacentTab, cycleTab, reorderTabs, Tabs } from "./Tabs";
 import type { Session } from "./Terminal";
 import { TerminalPane } from "./Terminal";
 import { Empty, Modal } from "./ui";
@@ -65,6 +76,7 @@ export function App() {
   const [importingSSH, setImportingSSH] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState("library");
+  const [focusRequest, setFocusRequest] = useState(0);
   const [notice, setNotice] = useState("");
   const [known, setKnown] = useState<KnownHost[]>([]);
   const [historyTab, setHistoryTab] = useState(false);
@@ -73,6 +85,7 @@ export function App() {
     action: () => void;
   } | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [choosingHost, setChoosingHost] = useState(false);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const saveChain = useRef(Promise.resolve());
@@ -114,22 +127,33 @@ export function App() {
         forward: forward ?? null,
       });
       setSessions((items) => [...items, session]);
-      setActive(session.id);
+      selectTab(session.id);
     } catch (err) {
       setNotice(String(err));
     }
   }
-  async function createEditor(type: "host" | "forward" | "snippet") {
+  async function createEditor(
+    type: "host" | "forward" | "snippet" | "group",
+    groupId = "",
+  ) {
     try {
       if (type === "host")
         setEditor({
           type,
-          value: await native<Host>("new_item", { kind: type }),
+          value: {
+            ...(await native<Host>("new_item", { kind: type })),
+            groupId,
+          },
         });
       else if (type === "forward")
         setEditor({
           type,
           value: await native<Forward>("new_item", { kind: type }),
+        });
+      else if (type === "group")
+        setEditor({
+          type,
+          value: await native<HostGroup>("new_item", { kind: type }),
         });
       else
         setEditor({
@@ -141,11 +165,14 @@ export function App() {
     }
   }
   function remove(
-    collection: "hosts" | "keys" | "snippets" | "forwards",
+    collection: "hosts" | "keys" | "snippets" | "forwards" | "groups",
     id: string,
   ) {
     setConfirm({
-      message: `Delete this ${collection === "keys" ? "key" : collection === "forwards" ? "forwarding rule" : collection.slice(0, -1)}? This cannot be undone.`,
+      message:
+        collection === "groups"
+          ? "Delete this group? Its hosts will remain in Ungrouped."
+          : `Delete this ${collection === "keys" ? "key" : collection === "forwards" ? "forwarding rule" : collection.slice(0, -1)}? This cannot be undone.`,
       action: () => {
         void (async () => {
           update(
@@ -158,7 +185,9 @@ export function App() {
                     ? "host"
                     : collection === "forwards"
                       ? "forward"
-                      : "snippet",
+                      : collection === "groups"
+                        ? "group"
+                        : "snippet",
               item: { id },
             }),
           );
@@ -166,6 +195,34 @@ export function App() {
       },
     });
   }
+  function selectTab(id: string, focusTerminal = true) {
+    setActive(id);
+    if (focusTerminal) setFocusRequest((value) => value + 1);
+  }
+  function closeTab(id: string) {
+    setSessions((items) => items.filter((item) => item.id !== id));
+    if (active === id) selectTab(adjacentTab(sessions, id));
+    else setFocusRequest((value) => value + 1);
+  }
+  useShortcuts(
+    workspace.settings.shortcuts,
+    loaded && !syncing && !editor && !confirm && !importingSSH && !choosingHost,
+    (action) => {
+      if (action === "newTab") setChoosingHost(true);
+      else if (action === "closeTab" && active !== "library") closeTab(active);
+      else if (action === "nextTab" || action === "previousTab")
+        selectTab(cycleTab(sessions, active, action === "nextTab" ? 1 : -1));
+      else if (action === "snippets" || action === "library") {
+        setPage(action === "snippets" ? "Snippets" : "Hosts");
+        setHistoryTab(false);
+        setActive("library");
+      } else if (action.startsWith("tab")) {
+        const index =
+          action === "tab9" ? sessions.length - 1 : Number(action.slice(3)) - 1;
+        if (sessions[index]) selectTab(sessions[index].id);
+      }
+    },
+  );
   const activeSession = sessions.find((s) => s.id === active);
   const [displayedKnown, setDisplayedKnown] = useState<KnownHost[]>([]);
   useEffect(() => {
@@ -235,34 +292,18 @@ export function App() {
         </div>
       </aside>
       <main className="main">
-        {sessions.length > 0 && (
-          <div className="tabbar">
-            {sessions.map((s) => (
-              <div
-                key={s.id}
-                className={`session-tab ${active === s.id ? "active" : ""}`}
-              >
-                <button type="button" onClick={() => setActive(s.id)}>
-                  <Terminal size={15} />
-                  {s.host.name}
-                  {s.forward ? " · Tunnel" : ""}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Close ${s.host.name}`}
-                  onClick={() => {
-                    setSessions((items) =>
-                      items.filter((item) => item.id !== s.id),
-                    );
-                    if (active === s.id) setActive("library");
-                  }}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-            <div className="spacer" />
-          </div>
+        {loaded && (
+          <Tabs
+            sessions={sessions}
+            active={active}
+            disabled={syncing}
+            onSelect={selectTab}
+            onClose={closeTab}
+            onNew={() => setChoosingHost(true)}
+            onReorder={(source, target, after) =>
+              setSessions((items) => reorderTabs(items, source, target, after))
+            }
+          />
         )}
         {loadError ? (
           <div className="empty-state">
@@ -293,6 +334,13 @@ export function App() {
                       >
                         <UploadSimple size={17} />
                         Import SSH config
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => createEditor("group")}
+                      >
+                        <FolderPlus size={17} />
+                        New group
                       </button>
                       <button
                         type="button"
@@ -348,25 +396,22 @@ export function App() {
               <div className="page-content" key={page}>
                 {syncing && <div className="sync-lock" aria-hidden="true" />}
                 {page === "Hosts" &&
-                  (workspace.hosts.length ? (
-                    <>
-                      <div className="section-label">
-                        Hosts <span>{workspace.hosts.length}</span>
-                      </div>
-                      <div className="host-grid">
-                        {workspace.hosts.map((host) => (
-                          <HostCard
-                            key={host.id}
-                            host={host}
-                            onConnect={() => void connect(host)}
-                            onEdit={() =>
-                              setEditor({ type: "host", value: host })
-                            }
-                            onDelete={() => remove("hosts", host.id)}
-                          />
-                        ))}
-                      </div>
-                    </>
+                  (workspace.hosts.length || workspace.groups?.length ? (
+                    <HostLibrary
+                      workspace={workspace}
+                      onConnect={(host) => void connect(host)}
+                      onEdit={(host) =>
+                        setEditor({ type: "host", value: host })
+                      }
+                      onDelete={(host) => remove("hosts", host.id)}
+                      onEditGroup={(group) =>
+                        setEditor({ type: "group", value: group })
+                      }
+                      onDeleteGroup={(group) => remove("groups", group.id)}
+                      onNewHost={(groupId) =>
+                        void createEditor("host", groupId)
+                      }
+                    />
                   ) : (
                     <Empty
                       icon={<Server size={31} />}
@@ -774,13 +819,10 @@ export function App() {
               >
                 <TerminalPane
                   session={session}
+                  active={active === session.id}
+                  focusRequest={focusRequest}
                   settings={workspace.settings}
-                  onClose={() => {
-                    setSessions((items) =>
-                      items.filter((item) => item.id !== session.id),
-                    );
-                    setActive("library");
-                  }}
+                  onClose={() => closeTab(session.id)}
                   onOS={(id, system) => {
                     void native<Workspace>("edit_workspace", {
                       workspace: workspaceRef.current,
@@ -809,6 +851,20 @@ export function App() {
             <X size={15} />
           </button>
         </div>
+      )}
+      {choosingHost && (
+        <HostPicker
+          workspace={workspace}
+          onClose={() => setChoosingHost(false)}
+          onChoose={(host) => {
+            setChoosingHost(false);
+            void connect(host);
+          }}
+          onNewHost={() => {
+            setChoosingHost(false);
+            void createEditor("host");
+          }}
+        />
       )}
       {editor && (
         <EditorModal

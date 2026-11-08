@@ -354,6 +354,106 @@ p {
   border-radius: 8px 8px 0 0;
   color: var(--muted);
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.tab-list {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.session-tab[draggable="true"] {
+  cursor: grab;
+}
+.session-tab[draggable="true"]:active {
+  cursor: grabbing;
+}
+.session-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.session-tab.drop-before {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.session-tab.drop-after {
+  box-shadow: inset -3px 0 var(--accent);
+}
+.tab-title {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.new-tab {
+  flex-shrink: 0;
+  align-self: center;
+  min-width: 30px;
+  margin-bottom: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+.host-group + .host-group {
+  margin-top: 30px;
+}
+.group-heading,
+.group-heading h2,
+.group-actions,
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.group-heading {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.group-heading h2 {
+  font-size: 13px;
+}
+.group-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+.group-actions {
+  gap: 4px;
+}
+.shortcut-row {
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.shortcut-row:last-of-type {
+  margin-bottom: 16px;
+}
+.shortcut-row button {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.shortcut-row button[aria-pressed="true"] {
+  outline: 1px solid var(--accent);
+}
+.host-picker-list {
+  display: grid;
+  gap: 6px;
+  max-height: 45dvh;
+  overflow: auto;
+  margin-bottom: 18px;
+}
+.host-picker-list button {
+  justify-content: space-between;
+  text-align: left;
+  padding: 12px;
+}
+.picker-label {
+  overflow-wrap: anywhere;
+}
+.host-picker-list small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
 }
 .session-tab:hover {
   background: var(--panel);
@@ -518,15 +618,6 @@ p {
   min-height: 26px;
   min-width: 26px;
   padding: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.card-actions button:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.card-actions button:last-child:hover {
-  color: var(--danger);
 }
 .host-name {
   grid-column: 2;
@@ -1085,7 +1176,8 @@ button.paper:active {
   font-weight: 500;
 }
 .modal fieldset,
-.sync-section fieldset {
+.sync-section fieldset,
+.storage-panel fieldset {
   min-width: 0;
   margin: 0;
   padding: 0;

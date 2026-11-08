@@ -61,6 +61,9 @@ fn load_workspace(app: tauri::AppHandle) -> Result<Value> {
         settings.as_object_mut().unwrap().extend(saved.clone());
     }
     value["settings"] = settings;
+    if value.get("groups").is_none() {
+        value["groups"] = serde_json::json!([]);
+    }
     Ok(value)
 }
 #[tauri::command]
@@ -72,6 +75,12 @@ fn save_workspace(app: tauri::AppHandle, workspace: Value) -> Result<()> {
     }
     if !workspace["settings"].is_object() {
         return Err("Invalid settings.".into());
+    }
+    if workspace
+        .get("groups")
+        .is_some_and(|groups| !groups.is_array())
+    {
+        return Err("Invalid host groups.".into());
     }
     let bytes = serde_json::to_vec_pretty(&workspace).map_err(|e| e.to_string())?;
     if bytes.len() > 5 * 1024 * 1024 {

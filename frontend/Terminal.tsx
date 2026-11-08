@@ -18,16 +18,22 @@ type Output =
   | { type: "status"; status: string };
 export function TerminalPane({
   session,
+  active,
+  focusRequest,
   settings,
   onClose,
   onOS,
 }: {
   session: Session;
+  active: boolean;
+  focusRequest: number;
   settings: Settings;
   onClose: () => void;
   onOS: (id: string, os: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const osRef = useRef(onOS);
@@ -117,7 +123,7 @@ export function TerminalPane({
         }
         sessionId = id;
         setStatus("Running");
-        term.focus();
+        if (activeRef.current) term.focus();
       })
       .catch((err) => {
         if (!disposed) {
@@ -146,6 +152,14 @@ export function TerminalPane({
         void native("close_session", { id: sessionId }).catch(() => {});
     };
   }, [session, attempt]);
+  useEffect(() => {
+    if (!focusRequest || !activeRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      fitRef.current?.fit();
+      terminalRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest]);
   useEffect(() => {
     if (terminalRef.current && container.current) {
       const options = terminalRef.current.options;

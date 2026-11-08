@@ -4,6 +4,7 @@ import {
   ShieldCheck,
   Terminal,
 } from "@phosphor-icons/react";
+import { KeyboardSettings } from "./KeyboardSettings";
 import { MigrationSettings } from "./MigrationSettings";
 import type { Settings, Workspace } from "./model";
 import { SyncSettings } from "./SyncSettings";
@@ -193,6 +194,7 @@ export function SettingsView({
           onBusy={onSyncBusy}
           isCurrent={isCurrent}
         />
+        <KeyboardSettings settings={s} onChange={onChange} disabled={syncing} />
         <MigrationSettings disabled={syncing} onBusy={onSyncBusy} />
       </div>
     </div>

@@ -39,11 +39,17 @@ export function HostCard({
         </span>
       </button>
       <div className="card-actions">
-        <button type="button" aria-label={`Edit ${host.name}`} onClick={onEdit}>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`Edit ${host.name}`}
+          onClick={onEdit}
+        >
           <PencilSimple size={16} />
         </button>
         <button
           type="button"
+          className="icon-button"
           aria-label={`Delete ${host.name}`}
           onClick={onDelete}
         >

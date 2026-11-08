@@ -1187,11 +1187,20 @@ mod tests {
         let mut f = Fake::new(
             "profiles: [{id: 'ssh:remote', type: ssh, name: Remote, options: {host: remote.example.com}}]",
         );
-        let first = run(&f, "").unwrap();
+        let mut first = run(&f, "").unwrap();
         assert_eq!(list(&first["workspace"]["hosts"]).len(), 1);
+        first["workspace"]["groups"] = json!([{"id":"local-group","name":"Production"}]);
+        first["workspace"]["hosts"][0]["groupId"] = json!("local-group");
+        first["workspace"]["settings"]["shortcuts"] = json!({"newTab":"Alt+KeyT"});
         f.workspace = first["workspace"].clone();
         let next = run(&f, "").unwrap();
         assert_eq!(next["workspace"]["hosts"], first["workspace"]["hosts"]);
+        assert_eq!(next["workspace"]["groups"], first["workspace"]["groups"]);
+        assert_eq!(
+            next["workspace"]["settings"]["shortcuts"],
+            first["workspace"]["settings"]["shortcuts"]
+        );
+        assert!(!f.content.lock().unwrap().contains("local-group"));
         assert_eq!(*f.writes.lock().unwrap(), 2);
     }
     #[test]

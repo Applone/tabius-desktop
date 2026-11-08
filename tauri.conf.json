@@ -10,6 +10,7 @@
     "windows": [
       {
         "title": "Tabius",
+        "dragDropEnabled": false,
         "width": 1320,
         "height": 860,
         "minWidth": 900,

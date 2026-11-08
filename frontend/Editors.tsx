@@ -11,13 +11,21 @@ import {
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { native } from "./api";
-import type { Forward, Host, KeyEntry, Snippet, Workspace } from "./model";
+import type {
+  Forward,
+  Host,
+  HostGroup,
+  KeyEntry,
+  Snippet,
+  Workspace,
+} from "./model";
 import { hostChain } from "./model";
 import { Field, Modal, Toggle } from "./ui";
 export type Editor =
   | { type: "host"; value: Host }
   | { type: "forward"; value: Forward }
   | { type: "snippet"; value: Snippet }
+  | { type: "group"; value: HostGroup }
   | { type: "key" }
   | { type: "history" }
   | { type: "known" };
@@ -46,6 +54,9 @@ export function EditorModal({
       : { id: "", name: "", command: "" },
   );
   const [keyMode, setKeyMode] = useState("generate");
+  const [group, setGroup] = useState(
+    editor.type === "group" ? editor.value : { id: "", name: "" },
+  );
   const [publicKey, setPublicKey] = useState("");
   const [keyName, setKeyName] = useState("");
   const [kind, setKind] = useState("ed25519");
@@ -57,6 +68,7 @@ export function EditorModal({
     host: "Host details",
     forward: "Port forwarding",
     snippet: "Snippet",
+    group: "Host group",
     key: "Add a key",
     history: "Import shell history",
     known: "Import known hosts",
@@ -74,7 +86,8 @@ export function EditorModal({
       if (
         editor.type === "host" ||
         editor.type === "forward" ||
-        editor.type === "snippet"
+        editor.type === "snippet" ||
+        editor.type === "group"
       ) {
         onSave(
           await native("edit_workspace", {
@@ -85,7 +98,9 @@ export function EditorModal({
                 ? host
                 : editor.type === "forward"
                   ? rule
-                  : snippet,
+                  : editor.type === "snippet"
+                    ? snippet
+                    : group,
             remove: false,
           }),
         );
@@ -150,6 +165,18 @@ export function EditorModal({
         }}
       >
         <fieldset disabled={busy}>
+          {editor.type === "group" && (
+            <Field label="Group name">
+              <input
+                required
+                maxLength={100}
+                value={group.name}
+                onChange={(event) =>
+                  setGroup({ ...group, name: event.target.value })
+                }
+              />
+            </Field>
+          )}
           {editor.type === "host" && (
             <>
               <div className="form-section">
@@ -169,6 +196,19 @@ export function EditorModal({
                     onChange={(e) => setH("address", e.target.value)}
                     placeholder="192.168.1.10"
                   />
+                </Field>
+                <Field label="Group">
+                  <select
+                    value={host.groupId ?? ""}
+                    onChange={(event) => setH("groupId", event.target.value)}
+                  >
+                    <option value="">Ungrouped</option>
+                    {(workspace.groups ?? []).map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <div className="form-columns">
                   <Field label="Username">

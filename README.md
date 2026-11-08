@@ -143,12 +143,37 @@ repository labels are `dependencies`, `rust`, `javascript`, and `ci`.
 
 ## Features
 
-- **Hosts:** double-click a host to open a session, or focus it and press Enter/Space. SSH agent, managed keys or interactive password authentication; port, username, agent forwarding, startup snippet, jump hosts, SSH proxy hop, environment variables, UTF-8 locale, and Mosh. Tags and groups are omitted.
+- **Hosts:** double-click a host to open a session, or focus it and press Enter/Space. Create and rename host groups, assign hosts in host details, or add hosts directly to a group. Deleting a group moves its hosts to Ungrouped. SSH agent, managed keys or interactive password authentication; port, username, agent forwarding, startup snippet, jump hosts, SSH proxy hop, environment variables, UTF-8 locale, and Mosh.
 - **Keychain:** generate Ed25519 or RSA-4096 keys with optional passphrase encryption, import OpenSSH/PEM keys, copy public keys, and delete keys. Passphrases are entered through a PTY rather than process arguments. Encrypted manual imports need the matching public key.
 - **Port forwarding:** local, remote, and dynamic SOCKS rules. Listeners bind to loopback; remote listeners also depend on the server's GatewayPorts policy. Closing a tunnel tab stops it.
 - **Snippets and history:** save scripts, run them in an open session, or use them at startup. Explicitly import Bash/Zsh history and turn a command into a snippet. Terminal input is not recorded. Selecting a session under Run in session executes the script.
 - **Known hosts:** inspect/import/remove verified OpenSSH identities. New keys require confirmation and changed keys block connections.
-- **Settings:** reconnect, bell, Option as Meta, TERM selection, local fonts, themes, ANSI colors, OS detection, and post-quantum key-exchange compatibility.
+- **Settings:** configurable keyboard shortcuts, reconnect, bell, Option as Meta, TERM selection, local fonts, themes, ANSI colors, OS detection, and post-quantum key-exchange compatibility.
+
+Drag session tabs to reorder them without reconnecting. Click a tab anywhere
+outside its close control to select it. Closing the active tab selects an
+adjacent session; the Library tab remains available. The plus button opens a
+host picker with search by name, address, or group; Enter opens the first match.
+
+Default shortcuts (use Cmd instead of Ctrl for the Shift combinations on macOS):
+
+| Action                                 | Shortcut                      |
+| -------------------------------------- | ----------------------------- |
+| New session tab / host picker          | Ctrl+Shift+T                  |
+| Close active session tab               | Ctrl+Shift+W                  |
+| Next / previous tab, including Library | Ctrl+Tab / Ctrl+Shift+Tab     |
+| Open Snippets                          | Ctrl+Shift+S                  |
+| Open host library                      | Ctrl+Shift+L                  |
+| Session tabs 1–8 / last session        | Ctrl+Shift+1–8 / Ctrl+Shift+9 |
+
+Change bindings under Settings → Keyboard shortcuts. Click a binding and press
+a combination; Escape cancels, Backspace/Delete clears it, and Reset shortcuts
+restores defaults. Conflicting bindings are rejected. Shortcuts apply while the
+app is focused, including inside terminals; regular form inputs, open dialogs,
+and shortcut recording keep their keyboard input. OS-reserved combinations
+may be intercepted before reaching the app. Groups and custom shortcuts are
+stored in the local workspace and are not uploaded through Tabby-Web sync;
+sync preserves group assignments for existing local hosts.
 
 Host chaining lets you choose an existing host and copies its username, address, port, and preceding SSH hops into the jump route. Later changes to that host require selecting it again. Existing imported routes are preserved and can be cleared with None. Jump-host authentication uses the SSH agent or default identity files; managed key assignments apply to the destination host. The SSH proxy field accepts an SSH hop, not an HTTP/SOCKS proxy command. Environment values currently exclude whitespace and quotes, and require server AcceptEnv support. Startup snippets and OS detection assume a POSIX-compatible remote shell. Auto reconnect retries SSH exit 255 every three seconds, including authentication errors; close the tab to stop it.
 

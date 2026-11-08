@@ -1,3 +1,4 @@
+import type { ShortcutAction } from "./shortcuts";
 import type { SyncState } from "./sync";
 export interface Host {
   syncId?: string;
@@ -17,6 +18,11 @@ export interface Host {
   utf8: boolean;
   mosh: boolean;
   system: string;
+  groupId?: string;
+}
+export interface HostGroup {
+  id: string;
+  name: string;
 }
 export function hostChain(host: Host): string {
   const address = host.address.includes(":")
@@ -55,6 +61,7 @@ export interface HistoryEntry {
   date: string;
 }
 export interface Settings {
+  shortcuts?: Partial<Record<ShortcutAction, string>>;
   autoReconnect: boolean;
   bell: boolean;
   optionAsMeta: boolean;
@@ -68,6 +75,7 @@ export interface Settings {
   postQuantum: boolean;
 }
 export interface Workspace {
+  groups?: HostGroup[];
   sync?: SyncState;
   hosts: Host[];
   keys: KeyEntry[];

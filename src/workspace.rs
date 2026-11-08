@@ -16,10 +16,10 @@ pub fn list(value: &Value) -> Vec<Value> {
     value.as_array().cloned().unwrap_or_default()
 }
 pub fn settings() -> Value {
-    json!({"autoReconnect":false,"bell":false,"optionAsMeta":true,"emulator":"xterm-256color","font":"monospace","fontSize":14,"lineHeight":1.2,"theme":"Graphite","highlighting":true,"detectOS":true,"postQuantum":true})
+    json!({"autoReconnect":false,"bell":false,"optionAsMeta":true,"emulator":"xterm-256color","font":"monospace","fontSize":14,"lineHeight":1.2,"theme":"Graphite","highlighting":true,"detectOS":true,"postQuantum":true,"shortcuts":{}})
 }
 pub fn empty() -> Value {
-    json!({"hosts":[],"keys":[],"snippets":[],"forwards":[],"history":[],"settings":settings()})
+    json!({"hosts":[],"groups":[],"keys":[],"snippets":[],"forwards":[],"history":[],"settings":settings()})
 }
 #[tauri::command]
 pub fn new_item(kind: String) -> Result<Value> {
@@ -31,6 +31,7 @@ pub fn new_item(kind: String) -> Result<Value> {
             json!({"id":id(),"name":"","hostId":"","kind":"local","bindAddress":"127.0.0.1","bindPort":8080,"destination":"127.0.0.1","destinationPort":80})
         }
         "snippet" => json!({"id":id(),"name":"","command":""}),
+        "group" => json!({"id":id(),"name":""}),
         _ => return Err("Invalid item kind.".into()),
     })
 }
@@ -88,6 +89,7 @@ pub fn edit_workspace(
 ) -> Result<Value> {
     let collection = match kind.as_str() {
         "host" => "hosts",
+        "group" => "groups",
         "key" => "keys",
         "forward" => "forwards",
         "snippet" => "snippets",
@@ -111,6 +113,13 @@ pub fn edit_workspace(
         match kind.as_str() {
             "host" => {
                 validate_host(&item)?;
+                if !text(&item["groupId"]).is_empty()
+                    && !list(&workspace["groups"])
+                        .iter()
+                        .any(|g| g["id"] == item["groupId"])
+                {
+                    return Err("Choose an existing host group.".into());
+                }
                 if let Some(old) = list(&workspace["hosts"])
                     .iter()
                     .find(|h| h["id"] == item["id"])
@@ -137,6 +146,24 @@ pub fn edit_workspace(
                 {
                     return Err("Ports must be between 1 and 65535.".into());
                 }
+            }
+            "group" => {
+                let name = text(&item["name"]).trim();
+                if name.is_empty()
+                    || name.chars().count() > 100
+                    || name.chars().any(char::is_control)
+                {
+                    return Err(
+                        "Enter a group name of 1–100 characters without control characters.".into(),
+                    );
+                }
+                if list(&workspace["groups"])
+                    .iter()
+                    .any(|g| g["id"] != item["id"] && text(&g["name"]).eq_ignore_ascii_case(name))
+                {
+                    return Err("A host group with this name already exists.".into());
+                }
+                item["name"] = json!(name);
             }
             "snippet"
                 if text(&item["name"]).trim().is_empty()
@@ -169,6 +196,13 @@ pub fn edit_workspace(
         items.push(item);
     }
     workspace[collection] = json!(items);
+    if remove && kind == "group" {
+        for host in workspace["hosts"].as_array_mut().ok_or("Invalid hosts.")? {
+            if text(&host["groupId"]) == item_id {
+                host["groupId"] = json!("");
+            }
+        }
+    }
     if remove && kind == "host" {
         workspace["forwards"] = json!(
             list(&workspace["forwards"])
@@ -211,6 +245,55 @@ pub fn prepare_session(workspace: Value, mut host: Value, forward: Option<Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn host_groups_validate_names_membership_and_preserve_hosts_on_deletion() {
+        let mut w = empty();
+        let mut group = new_item("group".into()).unwrap();
+        group["name"] = json!("  Production  ");
+        w = edit_workspace(w, "group".into(), group.clone(), false).unwrap();
+        assert_eq!(w["groups"][0]["name"], "Production");
+        let mut duplicate = new_item("group".into()).unwrap();
+        for name in ["production", "", "\n", "bad\nname"] {
+            duplicate["name"] = json!(name);
+            assert!(edit_workspace(w.clone(), "group".into(), duplicate.clone(), false).is_err());
+        }
+        duplicate["name"] = json!("x".repeat(101));
+        assert!(edit_workspace(w.clone(), "group".into(), duplicate, false).is_err());
+        let mut host = new_item("host".into()).unwrap();
+        host["name"] = json!("Server");
+        host["address"] = json!("example.com");
+        host["groupId"] = json!("missing");
+        assert!(edit_workspace(w.clone(), "host".into(), host.clone(), false).is_err());
+        host["groupId"] = group["id"].clone();
+        w = edit_workspace(w, "host".into(), host.clone(), false).unwrap();
+        group["name"] = json!("Live");
+        w = edit_workspace(w, "group".into(), group.clone(), false).unwrap();
+        assert_eq!(w["groups"][0]["name"], "Live");
+        assert_eq!(w["hosts"][0]["groupId"], group["id"]);
+        w["forwards"] = json!([{"id":"forward","hostId":host["id"]}]);
+        w = edit_workspace(w, "group".into(), group, true).unwrap();
+        assert_eq!(w["groups"], json!([]));
+        assert_eq!(w["hosts"][0]["id"], host["id"]);
+        assert_eq!(w["hosts"][0]["groupId"], "");
+        assert_eq!(w["forwards"][0]["hostId"], host["id"]);
+    }
+
+    #[test]
+    fn old_workspaces_can_create_groups_and_keep_shortcut_overrides() {
+        let mut w = empty();
+        w.as_object_mut().unwrap().remove("groups");
+        w["settings"]["shortcuts"] = json!({"newTab":"Ctrl+KeyN","closeTab":""});
+        w = edit_workspace(
+            w,
+            "group".into(),
+            json!({"id":"group","name":"Local"}),
+            false,
+        )
+        .unwrap();
+        assert_eq!(w["groups"][0]["name"], "Local");
+        assert_eq!(w["settings"]["shortcuts"]["newTab"], "Ctrl+KeyN");
+        assert_eq!(w["settings"]["shortcuts"]["closeTab"], "");
+    }
     #[test]
     fn imports_shell_history() {
         assert_eq!(history("# comment\n: 123:0; ls\npwd\nls\n"), ["pwd", "ls"]);
