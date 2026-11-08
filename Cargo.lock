@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "tabius-desktop"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes 0.8.4",
  "argon2",
