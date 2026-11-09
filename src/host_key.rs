@@ -103,6 +103,9 @@ impl Broker {
                     Err(_) => break,
                 };
                 let response: Result<String> = (|| {
+                    // BSD sockets inherit the listener's nonblocking mode. JSON reads
+                    // must wait for the helper's complete request and write shutdown.
+                    socket.set_nonblocking(false).map_err(|e| e.to_string())?;
                     socket
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .map_err(|e| e.to_string())?;
@@ -328,6 +331,39 @@ mod tests {
             socket.shutdown(Shutdown::Write).unwrap();
             serde_json::from_reader(socket).unwrap()
         })
+    }
+    #[test]
+    fn delayed_and_fragmented_helper_requests_wait_for_the_complete_message() {
+        let known = "example.com ssh-ed25519 STORED";
+        let broker = Broker::start(
+            Arc::new(AtomicBool::new(false)),
+            move |_| Ok(known.into()),
+            |_| panic!("must not save"),
+            |_| panic!("must not prompt"),
+        )
+        .unwrap();
+        let mut socket = TcpStream::connect(broker.address).unwrap();
+        socket.set_nodelay(true).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let bytes = serde_json::to_vec(&Lookup {
+            token: broker.token.clone(),
+            host: "example.com".into(),
+            kind: "NONE".into(),
+            key: "NONE".into(),
+        })
+        .unwrap();
+        // Allow the broker to accept before any request bytes arrive, then
+        // exercise a second read while only part of the JSON is available.
+        std::thread::sleep(Duration::from_millis(100));
+        let middle = bytes.len() / 2;
+        socket.write_all(&bytes[..middle]).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        socket.write_all(&bytes[middle..]).unwrap();
+        socket.shutdown(Shutdown::Write).unwrap();
+        let response: Result<String> = serde_json::from_reader(socket).unwrap();
+        assert_eq!(response.unwrap(), known);
     }
     #[test]
     fn key_order_queries_never_prompt_and_return_existing_trust() {
