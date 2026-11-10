@@ -168,6 +168,59 @@ const reconnect = () =>
 async function emit(message: unknown) {
   await act(async () => output.onmessage(message));
 }
+test("terminal fitting leaves room for padding around every row and column", async () => {
+  const style = document.createElement("style");
+  style.textContent = await Bun.file(
+    new URL("./style.css", import.meta.url),
+  ).text();
+  document.head.append(style);
+  const surface = document.createElement("div");
+  surface.className = "terminal-surface";
+  surface.style.width = "800px";
+  surface.style.height = "400px";
+  const element = document.createElement("div");
+  element.className = "xterm";
+  surface.append(element);
+  container.append(surface);
+  const fit = new addon.FitAddon();
+  fit.activate({
+    element,
+    options: { scrollback: 0 },
+    _core: {
+      _renderService: {
+        dimensions: { css: { cell: { width: 8, height: 20 } } },
+      },
+    },
+  } as unknown as Parameters<typeof fit.activate>[0]);
+  try {
+    const dimensions = fit.proposeDimensions();
+    expect(dimensions).toEqual({ cols: 96, rows: 18 });
+    const parentStyle = getComputedStyle(surface);
+    const terminalStyle = getComputedStyle(element);
+    const padding = (value: string) => Number.parseFloat(value) || 0;
+    const availableHeight =
+      400 -
+      padding(parentStyle.paddingTop) -
+      padding(parentStyle.paddingBottom);
+    const availableWidth =
+      800 -
+      padding(parentStyle.paddingLeft) -
+      padding(parentStyle.paddingRight);
+    expect(
+      (dimensions?.rows ?? 0) * 20 +
+        padding(terminalStyle.paddingTop) +
+        padding(terminalStyle.paddingBottom),
+    ).toBeLessThanOrEqual(availableHeight);
+    expect(
+      (dimensions?.cols ?? 0) * 8 +
+        padding(terminalStyle.paddingLeft) +
+        padding(terminalStyle.paddingRight),
+    ).toBeLessThanOrEqual(availableWidth);
+  } finally {
+    fit.dispose();
+    style.remove();
+  }
+});
 test("reconnect is hidden while connecting, running, and after a clean logout", async () => {
   deferStart = true;
   await mount();

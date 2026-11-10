@@ -1378,8 +1378,11 @@ button.paper:active {
 .terminal-surface {
   flex: 1;
   min-height: 0;
-  padding: 16px;
   background: var(--terminal-background, var(--bg));
+}
+/* FitAddon subtracts xterm padding, but counts parent padding as usable space. */
+.terminal-surface > .xterm {
+  padding: 16px;
 }
 .sync-section fieldset > button {
   margin-bottom: 20px;
