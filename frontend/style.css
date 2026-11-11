@@ -1384,6 +1384,9 @@ button.paper:active {
 .terminal-surface > .xterm {
   padding: 16px;
 }
+.terminal-surface .xterm-viewport {
+  background-color: var(--terminal-background, var(--bg));
+}
 .sync-section fieldset > button {
   margin-bottom: 20px;
 }

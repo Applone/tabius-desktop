@@ -168,6 +168,34 @@ const reconnect = () =>
 async function emit(message: unknown) {
   await act(async () => output.onmessage(message));
 }
+test("terminal viewport padding matches each theme instead of xterm's black default", async () => {
+  const style = document.createElement("style");
+  style.textContent =
+    (await Bun.file(
+      new URL("../node_modules/@xterm/xterm/css/xterm.css", import.meta.url),
+    ).text()) +
+    (await Bun.file(new URL("./style.css", import.meta.url)).text());
+  document.head.append(style);
+  const surface = document.createElement("div");
+  const element = document.createElement("div");
+  element.className = "xterm";
+  const viewport = document.createElement("div");
+  viewport.className = "xterm-viewport";
+  element.append(viewport);
+  surface.append(element);
+  container.append(surface);
+  try {
+    for (const theme of ["graphite", "midnight", "paper"]) {
+      surface.className = `terminal-surface ${theme}`;
+      const background = getComputedStyle(surface).backgroundColor;
+      expect(background).not.toBe("");
+      expect(background).not.toBe("rgb(0, 0, 0)");
+      expect(getComputedStyle(viewport).backgroundColor).toBe(background);
+    }
+  } finally {
+    style.remove();
+  }
+});
 test("terminal fitting leaves room for padding around every row and column", async () => {
   const style = document.createElement("style");
   style.textContent = await Bun.file(
