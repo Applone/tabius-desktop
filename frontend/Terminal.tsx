@@ -77,6 +77,32 @@ export function TerminalPane({
     fitRef.current = fit;
     term.loadAddon(fit);
     term.open(container.current);
+    term.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type !== "keydown" ||
+        event.code !== "KeyC" ||
+        !event.ctrlKey ||
+        !event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.isComposing ||
+        event.getModifierState("AltGraph")
+      )
+        return true;
+      event.preventDefault();
+      if (term.hasSelection() && !event.repeat) {
+        if (navigator.clipboard)
+          void navigator.clipboard
+            .writeText(term.getSelection())
+            .catch((err) => {
+              if (!disposed)
+                setError(`Could not copy terminal selection: ${String(err)}`);
+            });
+        else
+          setError("Could not copy terminal selection: clipboard unavailable.");
+      }
+      return false;
+    });
     fit.fit();
     for (const fingerprint of session.fingerprints ?? [])
       term.writeln(`Synced fingerprint reference: ${fingerprint}`);

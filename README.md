@@ -107,6 +107,10 @@ tab. Change bindings in **Settings → Keyboard shortcuts**; Escape cancels,
 Backspace/Delete clears, and Reset shortcuts restores defaults. Shortcuts apply
 inside terminals while ordinary forms and dialogs retain their keyboard input.
 
+Select terminal text and press **Ctrl+Shift+C** to copy it. **Ctrl+C** still
+interrupts the remote command; the copy shortcut with no selection leaves the
+clipboard unchanged. The native **Cmd+C** shortcut remains available on macOS.
+
 ## Local storage
 
 On first launch, choose a password to encrypt hosts, keys, snippets, history,

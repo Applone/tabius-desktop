@@ -17,6 +17,10 @@ const previousStyle = globalThis.getComputedStyle;
 const previousObserver = globalThis.ResizeObserver;
 const previousFrame = globalThis.requestAnimationFrame;
 const previousCancelFrame = globalThis.cancelAnimationFrame;
+const previousNavigator = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "navigator",
+);
 globalThis.window = browser as unknown as typeof window;
 globalThis.document = browser.document as unknown as Document;
 globalThis.getComputedStyle = browser.getComputedStyle.bind(
@@ -31,6 +35,15 @@ globalThis.cancelAnimationFrame = browser.cancelAnimationFrame.bind(
 ) as unknown as typeof cancelAnimationFrame;
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 Reflect.set(window, "__TAURI_INTERNALS__", { transformCallback: () => 1 });
+const copy = mock(async (_text: string) => {});
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: browser.navigator,
+});
+Object.defineProperty(browser.navigator, "clipboard", {
+  configurable: true,
+  value: { writeText: copy },
+});
 
 let terminalInput: ((data: string) => void) | undefined;
 const terminals: FakeTerminal[] = [];
@@ -38,6 +51,8 @@ class FakeTerminal {
   rows = 24;
   cols = 80;
   options: ITerminalOptions;
+  selection = "";
+  keyHandler: ((event: KeyboardEvent) => boolean) | undefined;
   constructor(options: ITerminalOptions) {
     this.options = { ...options };
     terminals.push(this);
@@ -45,6 +60,15 @@ class FakeTerminal {
   parser = { registerOscHandler: () => {} };
   loadAddon() {}
   open() {}
+  attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+    this.keyHandler = handler;
+  }
+  hasSelection() {
+    return this.selection.length > 0;
+  }
+  getSelection() {
+    return this.selection;
+  }
   onData(handler: (data: string) => void) {
     terminalInput = handler;
     return { dispose() {} };
@@ -129,6 +153,8 @@ beforeEach(() => {
   failAnswer = false;
   deferStart = false;
   resolveStart = undefined;
+  copy.mockReset();
+  copy.mockResolvedValue(undefined);
   invoke.mockClear();
   trustChanged.mockClear();
   close.mockClear();
@@ -150,6 +176,9 @@ afterAll(() => {
   globalThis.ResizeObserver = previousObserver;
   globalThis.requestAnimationFrame = previousFrame;
   globalThis.cancelAnimationFrame = previousCancelFrame;
+  if (previousNavigator)
+    Object.defineProperty(globalThis, "navigator", previousNavigator);
+  else Reflect.deleteProperty(globalThis, "navigator");
   Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
   browser.happyDOM.abort();
 });
@@ -175,6 +204,109 @@ const reconnect = () =>
 async function emit(message: unknown) {
   await act(async () => output.onmessage(message));
 }
+async function terminalKey(options: KeyboardEventInit = {}, type = "keydown") {
+  const event = new window.KeyboardEvent(type, {
+    code: "KeyC",
+    key: "C",
+    ctrlKey: true,
+    shiftKey: true,
+    cancelable: true,
+    ...options,
+  });
+  let process = true;
+  await act(async () => {
+    process = terminals[0]?.keyHandler?.(event) ?? true;
+    if (process && type === "keydown") terminalInput?.("\x03");
+  });
+  return { event, process };
+}
+test("Ctrl+Shift+C copies the terminal selection without sending a shell interrupt", async () => {
+  await mount(true);
+  if (terminals[0]) terminals[0].selection = "selected output\nUnicode: Привет";
+  const { event, process } = await terminalKey();
+  expect(copy).toHaveBeenCalledWith("selected output\nUnicode: Привет");
+  expect(process).toBe(false);
+  expect(event.defaultPrevented).toBe(true);
+  expect(
+    invoke.mock.calls.filter(([name]) => name === "write_session"),
+  ).toHaveLength(0);
+});
+test("Ctrl+Shift+C without a selection preserves the clipboard and does not interrupt SSH", async () => {
+  await mount(true);
+  const { event, process } = await terminalKey();
+  expect(copy).not.toHaveBeenCalled();
+  expect(process).toBe(false);
+  expect(event.defaultPrevented).toBe(true);
+  expect(
+    invoke.mock.calls.filter(([name]) => name === "write_session"),
+  ).toHaveLength(0);
+});
+test("ordinary Ctrl+C still reaches the shell even when text is selected", async () => {
+  await mount(true);
+  if (terminals[0]) terminals[0].selection = "selected output";
+  const { event, process } = await terminalKey({ key: "c", shiftKey: false });
+  expect(copy).not.toHaveBeenCalled();
+  expect(process).toBe(true);
+  expect(event.defaultPrevented).toBe(false);
+  expect(invoke).toHaveBeenCalledWith("write_session", {
+    id: session.id,
+    data: "\x03",
+  });
+});
+test.each([
+  { code: "KeyV", key: "V" },
+  { ctrlKey: false, metaKey: true, shiftKey: false },
+  { altKey: true },
+  { isComposing: true },
+])(
+  "copy binding leaves other shortcuts and composition to xterm: %j",
+  async (options) => {
+    await mount(true);
+    if (terminals[0]) terminals[0].selection = "selected output";
+    const { event, process } = await terminalKey(options);
+    expect(copy).not.toHaveBeenCalled();
+    expect(process).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  },
+);
+test("key repeats, keypress, and keyup do not copy the selection again", async () => {
+  await mount(true);
+  if (terminals[0]) terminals[0].selection = "selected output";
+  expect((await terminalKey({ repeat: true })).process).toBe(false);
+  await terminalKey({}, "keypress");
+  await terminalKey({}, "keyup");
+  expect(copy).not.toHaveBeenCalled();
+});
+test("clipboard write failures are visible without sending terminal input", async () => {
+  await mount(true);
+  if (terminals[0]) terminals[0].selection = "selected output";
+  copy.mockRejectedValue(new Error("Clipboard unavailable"));
+  const { process } = await terminalKey();
+  expect(process).toBe(false);
+  expect(container.textContent).toContain(
+    "Could not copy terminal selection: Error: Clipboard unavailable",
+  );
+  expect(
+    invoke.mock.calls.filter(([name]) => name === "write_session"),
+  ).toHaveLength(0);
+});
+test("an unavailable clipboard API reports an error instead of interrupting SSH", async () => {
+  await mount(true);
+  if (terminals[0]) terminals[0].selection = "selected output";
+  Object.defineProperty(browser.navigator, "clipboard", { value: undefined });
+  try {
+    expect((await terminalKey()).process).toBe(false);
+    expect(copy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("clipboard unavailable");
+    expect(
+      invoke.mock.calls.filter(([name]) => name === "write_session"),
+    ).toHaveLength(0);
+  } finally {
+    Object.defineProperty(browser.navigator, "clipboard", {
+      value: { writeText: copy },
+    });
+  }
+});
 test("JetBrains Mono uses installed upstream or Nerd Font families", async () => {
   await mount(true, { ...settings, font: "JetBrains Mono" });
   expect(terminals[0]?.options.fontFamily).toBe(
