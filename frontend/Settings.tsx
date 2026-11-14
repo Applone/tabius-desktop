@@ -4,6 +4,7 @@ import {
   ShieldCheck,
   Terminal,
 } from "@phosphor-icons/react";
+import { terminalFontFamily } from "./fonts";
 import { KeyboardSettings } from "./KeyboardSettings";
 import { MigrationSettings } from "./MigrationSettings";
 import type { Settings, Workspace } from "./model";
@@ -120,7 +121,7 @@ export function SettingsView({
           <div
             className={`terminal-preview ${s.theme.toLowerCase()}`}
             style={{
-              fontFamily: s.font,
+              fontFamily: terminalFontFamily(s.font),
               fontSize: s.fontSize,
               lineHeight: s.lineHeight,
             }}

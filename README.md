@@ -62,6 +62,11 @@ is hidden during terminal and SFTP work. Toggle Session tools at the top right
 for snippets, imported shell history, and terminal themes. Run sends the selected
 command to the active terminal for immediate execution.
 
+Terminal fonts use installed system fonts. The **JetBrains Mono** selection also
+recognizes **JetBrainsMono Nerd Font Mono** and **JetBrainsMono Nerd Font**. If a
+selected font is unavailable, the terminal and Settings preview use the system
+monospace font.
+
 Open **SFTP** to browse this computer on the left and choose a saved host on the
 right. SFTP uses OpenSSH key or agent authentication (password and interactive
 key-passphrase prompts are not supported; unlock encrypted keys in your SSH

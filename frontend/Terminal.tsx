@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { native } from "./api";
+import { terminalFontFamily } from "./fonts";
 import { HostKeyPrompt, type HostKeyRequest } from "./HostKeyPrompt";
 import type { Forward, Host, Settings } from "./model";
 import "@xterm/xterm/css/xterm.css";
@@ -66,7 +67,7 @@ export function TerminalPane({
     const term = new XTerm({
       cursorBlink: true,
       macOptionIsMeta: settingsRef.current.optionAsMeta,
-      fontFamily: settingsRef.current.font,
+      fontFamily: terminalFontFamily(settingsRef.current.font),
       fontSize: settingsRef.current.fontSize,
       lineHeight: settingsRef.current.lineHeight,
       theme: terminalTheme(settingsRef.current, container.current),
@@ -195,7 +196,7 @@ export function TerminalPane({
     if (terminalRef.current && container.current) {
       const options = terminalRef.current.options;
       options.fontSize = settings.fontSize;
-      options.fontFamily = settings.font;
+      options.fontFamily = terminalFontFamily(settings.font);
       options.lineHeight = settings.lineHeight;
       options.macOptionIsMeta = settings.optionAsMeta;
       options.theme = terminalTheme(settings, container.current);

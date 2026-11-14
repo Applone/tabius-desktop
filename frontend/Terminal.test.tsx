@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
 import type { Channel } from "@tauri-apps/api/core";
+import type { ITerminalOptions } from "@xterm/xterm";
 import { Window as HappyWindow } from "happy-dom";
 import { act } from "react";
 import * as originalApi from "./api";
@@ -32,10 +33,15 @@ Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 Reflect.set(window, "__TAURI_INTERNALS__", { transformCallback: () => 1 });
 
 let terminalInput: ((data: string) => void) | undefined;
+const terminals: FakeTerminal[] = [];
 class FakeTerminal {
   rows = 24;
   cols = 80;
-  options = {};
+  options: ITerminalOptions;
+  constructor(options: ITerminalOptions) {
+    this.options = { ...options };
+    terminals.push(this);
+  }
   parser = { registerOscHandler: () => {} };
   loadAddon() {}
   open() {}
@@ -119,6 +125,7 @@ const settings: Settings = {
 beforeEach(() => {
   failStart = false;
   terminalInput = undefined;
+  terminals.length = 0;
   failAnswer = false;
   deferStart = false;
   resolveStart = undefined;
@@ -146,14 +153,14 @@ afterAll(() => {
   Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
   browser.happyDOM.abort();
 });
-async function mount(active = false) {
+async function mount(active = false, preferences = settings) {
   await act(async () =>
     root.render(
       <TerminalPane
         session={session}
         active={active}
         focusRequest={0}
-        settings={settings}
+        settings={preferences}
         onClose={close}
         onOS={() => {}}
         onTrustChanged={trustChanged}
@@ -168,6 +175,29 @@ const reconnect = () =>
 async function emit(message: unknown) {
   await act(async () => output.onmessage(message));
 }
+test("JetBrains Mono uses installed upstream or Nerd Font families", async () => {
+  await mount(true, { ...settings, font: "JetBrains Mono" });
+  expect(terminals[0]?.options.fontFamily).toBe(
+    '"JetBrains Mono", "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", monospace',
+  );
+});
+test("live font changes keep a monospace fallback without restarting SSH", async () => {
+  await mount();
+  await mount(true, { ...settings, font: "Unavailable Font" });
+  expect(terminals[0]?.options.fontFamily).toBe(
+    '"Unavailable Font", monospace',
+  );
+  await mount(true, { ...settings, font: "DejaVu Sans Mono" });
+  expect(terminals[0]?.options.fontFamily).toBe(
+    '"DejaVu Sans Mono", monospace',
+  );
+  await mount(true);
+  expect(terminals[0]?.options.fontFamily).toBe("monospace");
+  expect(terminals).toHaveLength(1);
+  expect(
+    invoke.mock.calls.filter(([name]) => name === "start_session"),
+  ).toHaveLength(1);
+});
 test("terminal viewport padding matches each theme instead of xterm's black default", async () => {
   const style = document.createElement("style");
   style.textContent =

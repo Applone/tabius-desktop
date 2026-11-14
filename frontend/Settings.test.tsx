@@ -51,3 +51,21 @@ test("settings group terminal, session, and security on the left", () => {
   }
   expect(leftMarkup.match(/inert=""/g)).toHaveLength(3);
 });
+
+test("font preview recognizes system JetBrains Nerd Fonts and keeps the saved family", () => {
+  const markup = renderToStaticMarkup(
+    <SettingsView
+      workspace={workspace}
+      settings={{ ...workspace.settings, font: "JetBrains Mono" }}
+      syncing={false}
+      onChange={() => {}}
+      onSyncApply={async () => {}}
+      onSyncBusy={() => {}}
+      isCurrent={() => true}
+    />,
+  );
+  expect(markup).toContain('<option selected="">JetBrains Mono</option>');
+  expect(markup).toContain(
+    "font-family:&quot;JetBrains Mono&quot;, &quot;JetBrainsMono Nerd Font Mono&quot;, &quot;JetBrainsMono Nerd Font&quot;, monospace;",
+  );
+});
