@@ -62,10 +62,13 @@ is hidden during terminal and SFTP work. Toggle Session tools at the top right
 for snippets, imported shell history, and terminal themes. Run sends the selected
 command to the active terminal for immediate execution.
 
-Terminal fonts use installed system fonts. The **JetBrains Mono** selection also
-recognizes **JetBrainsMono Nerd Font Mono** and **JetBrainsMono Nerd Font**. If a
-selected font is unavailable, the terminal and Settings preview use the system
-monospace font.
+**Settings → Terminal → Font family** detects monospace fonts installed on this
+computer, including user-installed fonts and Nerd Fonts. Reopen Settings to
+refresh the list after installing fonts. **System monospace** uses the operating
+system’s default. A saved font that is no longer installed remains selected and
+is marked **not installed**; the terminal and preview use system monospace until
+you choose another font. Existing **JetBrains Mono** selections also recognize
+**JetBrainsMono Nerd Font Mono** and **JetBrainsMono Nerd Font**.
 
 Open **SFTP** to browse this computer on the left and choose a saved host on the
 right. SFTP uses OpenSSH key or agent authentication (password and interactive

@@ -4,12 +4,64 @@ import {
   ShieldCheck,
   Terminal,
 } from "@phosphor-icons/react";
-import { terminalFontFamily } from "./fonts";
+import { useEffect, useState } from "react";
+import { native } from "./api";
+import { hasTerminalFont, terminalFontFamily } from "./fonts";
 import { KeyboardSettings } from "./KeyboardSettings";
 import { MigrationSettings } from "./MigrationSettings";
 import type { Settings, Workspace } from "./model";
 import { SyncSettings } from "./SyncSettings";
 import { Field, Toggle } from "./ui";
+
+function FontPicker({
+  font,
+  onChange,
+}: {
+  font: string;
+  onChange: (font: string) => void;
+}) {
+  const [fonts, setFonts] = useState<string[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void native<string[]>("list_system_fonts")
+      .then((families) => {
+        if (!cancelled) setFonts(families);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const choices = new Set(["monospace", ...(fonts ?? [])]);
+  choices.add(font);
+  const unavailable = fonts !== null && !hasTerminalFont(font, fonts);
+  const hint = failed
+    ? "Couldn’t detect installed fonts. Your saved font is preserved."
+    : fonts === null
+      ? "Detecting installed monospace fonts…"
+      : unavailable
+        ? "Saved font is not installed. Using the system monospace font."
+        : "Monospace fonts installed on this computer.";
+  return (
+    <Field label="Font family" hint={hint}>
+      <select value={font} onChange={(event) => onChange(event.target.value)}>
+        {[...choices].map((family) => (
+          <option key={family} value={family}>
+            {family === "monospace"
+              ? "System monospace"
+              : family === font && unavailable
+                ? `${family} (not installed)`
+                : family}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 export function SettingsView({
   settings: s,
   onChange,
@@ -50,23 +102,7 @@ export function SettingsView({
             </select>
           </Field>
           <div className="form-columns">
-            <Field label="Font family">
-              <select
-                value={s.font}
-                onChange={(e) => set("font", e.target.value)}
-              >
-                {[
-                  "monospace",
-                  "JetBrains Mono",
-                  "SFMono-Regular",
-                  "Menlo",
-                  "Consolas",
-                  "DejaVu Sans Mono",
-                ].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </Field>
+            <FontPicker font={s.font} onChange={(font) => set("font", font)} />
             <Field label="Font size">
               <select
                 value={s.fontSize}

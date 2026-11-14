@@ -95,6 +95,7 @@ let trustedHosts: KnownHost[] = [];
 let sequence = 0;
 const invoke = mock(
   async (name: string, args?: Record<string, unknown>): Promise<unknown> => {
+    if (name === "list_system_fonts") return ["DejaVu Sans Mono"];
     if (name === "sftp_list")
       return {
         path: args?.id ? "/srv" : "/home/local",

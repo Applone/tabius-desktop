@@ -1,3 +1,4 @@
+mod fonts;
 mod host_key;
 mod local;
 mod migration;
@@ -914,6 +915,7 @@ pub fn run() {
         .manage(sftp::Connections::default())
         .manage(local::LocalStorage::default())
         .invoke_handler(tauri::generate_handler![
+            fonts::list_system_fonts,
             sftp::sftp_connect,
             sftp::sftp_answer,
             sftp::sftp_disconnect,
