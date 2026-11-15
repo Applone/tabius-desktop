@@ -32,7 +32,10 @@ FORMATS = {
 def version():
     cargo = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"]
     for filename in ("package.json", "tauri.conf.json"):
-        if json.loads((ROOT / filename).read_text())["version"] != cargo:
+        configured = json.loads((ROOT / filename).read_text())["version"]
+        if filename == "tauri.conf.json" and configured.endswith(".json"):
+            configured = json.loads((ROOT / configured).read_text())["version"]
+        if configured != cargo:
             raise RuntimeError(f"{filename} version must match Cargo.toml ({cargo})")
     return cargo
 
