@@ -29,7 +29,7 @@ esac
 
 test "$(tabius-desktop --version)" = "tabius-desktop $PACKAGE_VERSION"
 tabius-desktop --help
-test -f /usr/share/applications/dev.tabius.desktop.desktop
+test -f /usr/share/applications/tabius-desktop.desktop
 test -f /usr/share/icons/hicolor/scalable/apps/tabius-desktop.svg
 test -f /usr/share/doc/tabius-desktop/LICENSE
 mkdir -p /root/.local/share/dev.tabius.desktop
