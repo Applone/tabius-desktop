@@ -66,3 +66,27 @@ test("host cards show connection details without the old footer", () => {
   expect(markup).not.toContain(">Server<");
   expect(markup).not.toContain("card-bottom");
 });
+
+test("detected host systems choose their OS logo", () => {
+  for (const system of ["ubuntu", "Darwin", "Windows", "Server"]) {
+    const markup = renderToStaticMarkup(
+      <HostCard
+        host={{ ...host, system }}
+        onConnect={() => {}}
+        onEdit={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    expect(markup).toContain(`aria-label="${system}"`);
+    expect(markup).not.toBe(
+      renderToStaticMarkup(
+        <HostCard
+          host={{ ...host, system: "other" }}
+          onConnect={() => {}}
+          onEdit={() => {}}
+          onDelete={() => {}}
+        />,
+      ),
+    );
+  }
+});

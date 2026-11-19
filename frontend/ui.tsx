@@ -47,7 +47,10 @@ export function Modal({
       className={`modal ${wide ? "wide" : ""}`}
       onCancel={onClose}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (
+          event.key === "Escape" &&
+          !(event.target as Element).closest("select")
+        ) {
           event.preventDefault();
           onClose();
         }

@@ -51,7 +51,6 @@ const workspace: Workspace = {
   keys: [],
   snippets: [],
   forwards: [],
-  history: [],
   settings: {
     autoReconnect: false,
     bell: false,

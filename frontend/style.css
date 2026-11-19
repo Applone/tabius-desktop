@@ -73,9 +73,9 @@ button {
   padding: 7px 12px;
   border: 1px solid transparent;
   border-radius: 7px;
-  background: var(--raised);
-  box-shadow: var(--surface-edge);
-  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -88,7 +88,8 @@ button {
     transform 180ms var(--ease-out);
 }
 button:hover {
-  background: var(--hover);
+  color: var(--text);
+  background: #8d91a51a;
 }
 button:active:not(:disabled) {
   transform: translateY(1px);
@@ -108,25 +109,14 @@ button svg {
   flex-shrink: 0;
 }
 button.primary {
-  border-color: #79c2ff30;
-  background: linear-gradient(180deg, #369ff8, var(--accent));
-  box-shadow:
-    inset 0 1px 0 #ffffff24,
-    0 3px 8px #07152940;
-  color: var(--accent-ink);
-}
-button.primary:hover {
-  background: var(--accent-hover);
-}
-button.primary:active:not(:disabled) {
-  background: #186cb5;
+  color: var(--accent-hover);
 }
 button.danger {
-  background: var(--danger);
-  color: var(--text);
+  color: var(--danger);
 }
+button.primary:hover,
 button.danger:hover {
-  background: #ff7375;
+  background: #8d91a51a;
 }
 .icon-button {
   min-width: 30px;
@@ -178,7 +168,6 @@ textarea {
   resize: vertical;
   line-height: 1.6;
 }
-/* Keep WebKitGTK selects on the same dark surface as the form. */
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -196,6 +185,61 @@ select {
 select option {
   background: var(--raised);
   color: var(--text);
+}
+@supports (appearance: base-select) and selector(::picker(select)) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+  select::picker-icon {
+    display: none;
+  }
+  ::picker(select) {
+    width: anchor-size(width);
+    max-height: min(19rem, 50vh);
+    margin-block: 4px;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    background: var(--panel);
+    box-shadow:
+      var(--surface-edge),
+      0 8px 24px #10132366;
+    color: var(--text);
+    font: inherit;
+  }
+  select option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 6px 9px;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--secondary);
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  select option:checked {
+    background: var(--raised);
+    color: var(--text);
+  }
+  select option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--accent-hover);
+  }
+  select option:hover,
+  select option:focus-visible {
+    background: var(--hover);
+    color: var(--text);
+  }
+  select option:focus-visible {
+    outline: 1px solid var(--accent-hover);
+    outline-offset: -1px;
+  }
 }
 input[type="range"] {
   min-height: 24px;
@@ -793,15 +837,6 @@ pre,
   background: var(--raised);
   color: var(--text);
 }
-.content-tabs {
-  align-self: flex-start;
-  margin-bottom: 24px;
-}
-.content-tabs span {
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 .section-row {
   display: flex;
   align-items: center;
@@ -817,17 +852,6 @@ pre,
   align-items: center;
   gap: 9px;
   overflow-wrap: anywhere;
-}
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 16px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.history-item > svg {
-  flex-shrink: 0;
-  color: var(--muted);
 }
 .snippet-grid {
   display: grid;
@@ -987,7 +1011,7 @@ fieldset.field {
   gap: 4px;
   min-height: 78px;
   padding: 10px;
-  border: 2px solid transparent;
+  border: 0;
   border-radius: 8px;
   font-size: 11px;
 }
@@ -1009,7 +1033,7 @@ fieldset.field {
   background: #8cafe0;
 }
 .theme-option.chosen {
-  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 .theme-option > svg {
   position: absolute;
@@ -1030,12 +1054,6 @@ fieldset.field {
   --terminal-background: #f5f2eb;
   background: var(--terminal-background);
   color: #313b36;
-}
-.theme-option:hover {
-  border-color: var(--muted);
-}
-.theme-option.chosen:hover {
-  border-color: var(--accent-hover);
 }
 button.graphite:hover,
 button.graphite:active,
@@ -1246,7 +1264,7 @@ button.paper:active {
   gap: 8px;
   margin-bottom: 20px;
   padding: 16px;
-  border: 1px dashed var(--border-strong);
+  border: 0;
   border-radius: 6px;
   color: var(--secondary);
   cursor: pointer;
@@ -1321,8 +1339,8 @@ button.paper:active {
   color: var(--muted);
 }
 .toast button:hover {
-  background: var(--hover);
   color: var(--text);
+  background: #8d91a51a;
 }
 .session-container {
   display: flex;
@@ -1420,19 +1438,6 @@ button.paper:active {
   to {
     transform: rotate(360deg);
   }
-}
-.segmented.content-tabs button {
-  flex: none;
-  white-space: nowrap;
-  min-height: 28px;
-  gap: 5px;
-  padding: 4px 9px;
-  font-size: 11px;
-  line-height: 18px;
-}
-.segmented.content-tabs button svg {
-  width: 14px;
-  height: 14px;
 }
 /* Animate view changes without remounting live terminal sessions. */
 .page-content,
@@ -1613,7 +1618,8 @@ button.paper:active {
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
-  background: var(--lowest);
+  background: linear-gradient(160deg, var(--panel), var(--bg));
+  box-shadow: -6px 0 20px #10132326;
   min-height: 0;
 }
 .session-tools > :where(header) {
@@ -1635,11 +1641,12 @@ button.paper:active {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  border-bottom: 2px solid transparent;
+  border: 0;
   font-size: 11px;
 }
 .session-tools > :where(nav) :where(button).chosen {
-  border-bottom-color: var(--accent);
+  background: var(--raised);
+  border-radius: 7px;
   color: var(--accent-hover);
 }
 .tools-content {
@@ -1654,11 +1661,14 @@ button.paper:active {
   width: 100%;
   margin-top: 10px;
   background: transparent;
-  border: 1px dashed var(--border-strong);
+  border: 0;
 }
 .tool-command {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 14px;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--surface-edge), var(--surface-shadow);
 }
 .tool-command :where(strong) {
   font-weight: 500;
@@ -1691,12 +1701,6 @@ button.paper:active {
 .tools-empty :where(p) {
   font-size: 12px;
   line-height: 1.7;
-}
-.session-tools > :where(footer) {
-  padding: 12px 16px;
-  font-size: 11px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
 }
 .sftp-container {
   display: flex;
@@ -1749,18 +1753,22 @@ button.paper:active {
 .file-panes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
   flex: 1;
   min-height: 0;
 }
 .file-pane {
+  background: var(--panel);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--surface-edge), var(--surface-shadow);
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
-.file-pane + .file-pane {
-  border-left: 1px solid var(--border-strong);
-}
+
 .file-pane-heading {
   display: flex;
   align-items: center;

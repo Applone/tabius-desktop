@@ -250,10 +250,10 @@ export function SFTP({
                   </strong>
                   <span>
                     {side === "local"
-                      ? "Local filesystem"
+                      ? ""
                       : host
                         ? `${host.username ? `${host.username}@` : ""}${host.address}`
-                        : "SFTP over SSH"}
+                        : ""}
                   </span>
                 </div>
                 {connection && side === "remote" && (
@@ -425,10 +425,7 @@ export function SFTP({
                     )}
                   </div>
                   <footer className="file-footer">
-                    {entries.length} items{" "}
-                    <span>
-                      {selected?.name ?? "Double-click a folder to open"}
-                    </span>
+                    {entries.length} items <span>{selected?.name ?? ""}</span>
                   </footer>
                 </>
               ) : (

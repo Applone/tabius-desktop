@@ -4,8 +4,8 @@ A desktop SSH client built with Rust, Tauri 2, React, and xterm.js.
 
 - Saved hosts and groups, SSH jump hosts, and optional Mosh support.
 - Managed SSH keys, local/remote/SOCKS forwarding, and verified host fingerprints.
-- Snippets, Bash/Zsh history import, and OpenSSH configuration import.
-- Terminal workspace with draggable tabs and a collapsible snippets, history, and themes panel.
+- Snippets and OpenSSH configuration import.
+- Terminal workspace with draggable tabs and a collapsible snippets and themes panel.
 - Two-pane SFTP browser with local/remote navigation and file transfers.
 - Configurable shortcuts, themes, and reconnect.
 - Encrypted local storage and optional Tabby-Web-compatible configuration sync.
@@ -59,8 +59,10 @@ address, or group. Deleting a group keeps its hosts in Ungrouped.
 The top bar provides **Library**, **SFTP**, and your terminal tabs. Library contains
 hosts, keychain, forwarding, snippets, known hosts, and settings; its navigation
 is hidden during terminal and SFTP work. Toggle Session tools at the top right
-for snippets, imported shell history, and terminal themes. Run sends the selected
-command to the active terminal for immediate execution.
+to run snippets or change the terminal theme.
+
+Host logos update from recognizable login banners and an OS probe after login.
+Linux probes read `/etc/os-release`; other Unix systems use `uname`.
 
 **Settings → Terminal → Font family** detects monospace fonts installed on this
 computer, including user-installed fonts and Nerd Fonts. Reopen Settings to
@@ -68,7 +70,9 @@ refresh the list after installing fonts. **System monospace** uses the operating
 system’s default. A saved font that is no longer installed remains selected and
 is marked **not installed**; the terminal and preview use system monospace until
 you choose another font. Existing **JetBrains Mono** selections also recognize
-**JetBrainsMono Nerd Font Mono** and **JetBrainsMono Nerd Font**.
+**JetBrainsMono Nerd Font Mono** and **JetBrainsMono Nerd Font**. Font sizes are
+in points (converted to CSS pixels for xterm), matching Kitty’s size units.
+WebKit and Kitty use different rendering paths, so glyph rasterization may differ.
 
 Open **SFTP** to browse this computer on the left and choose a saved host on the
 right. SFTP uses OpenSSH key or agent authentication (password and interactive
@@ -109,11 +113,12 @@ inside terminals while ordinary forms and dialogs retain their keyboard input.
 
 Select terminal text and press **Ctrl+Shift+C** to copy it. **Ctrl+C** still
 interrupts the remote command; the copy shortcut with no selection leaves the
-clipboard unchanged. The native **Cmd+C** shortcut remains available on macOS.
+clipboard unchanged. Ctrl+Shift+V pastes using its physical key. Terminal Ctrl/Alt
+letter shortcuts also use physical keys, while ordinary typing retains its layout. The native **Cmd+C** shortcut remains available on macOS.
 
 ## Local storage
 
-On first launch, choose a password to encrypt hosts, keys, snippets, history,
+On first launch, choose a password to encrypt hosts, keys, snippets,
 settings, and trust records, including existing plaintext data. Automatic unlock
 stores the password in Linux Secret Service (GNOME Keyring or compatible
 KWallet), Apple Keychain, or Windows Credential Manager. If unavailable, choose
@@ -137,7 +142,7 @@ backups and snapshots. Terminal input is not recorded.
 In **Settings → Configuration sync**, enter the HTTPS server URL and token,
 select a configuration, choose encryption, enter its vault password, and
 synchronize. Sync includes hosts, private keys, and fingerprint references;
-groups, shortcuts, snippets, forwarding, history, and terminal settings stay local.
+groups, shortcuts, snippets, forwarding, and terminal settings stay local.
 Fingerprint references still require explicit trust before connecting.
 
 Modern encryption uses Argon2id, HKDF-SHA256, and XChaCha20-Poly1305. Legacy Tabby

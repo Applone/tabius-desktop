@@ -3,7 +3,6 @@ import {
   ArrowsLeftRight,
   CheckCircle,
   CircleNotch,
-  ClockCounterClockwise,
   Code,
   Copy,
   Fingerprint,
@@ -68,7 +67,6 @@ export function App() {
     keys: [],
     snippets: [],
     forwards: [],
-    history: [],
     settings: {} as Workspace["settings"],
   });
   const [loaded, setLoaded] = useState(false);
@@ -83,7 +81,6 @@ export function App() {
   const [focusRequest, setFocusRequest] = useState(0);
   const [notice, setNotice] = useState("");
   const [known, setKnown] = useState<KnownHost[]>([]);
-  const [historyTab, setHistoryTab] = useState(false);
   const [confirm, setConfirm] = useState<{
     message: string;
     action: () => void;
@@ -107,6 +104,7 @@ export function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   function update(next: Workspace) {
+    workspaceRef.current = next;
     setWorkspace(next);
     saveChain.current = saveChain.current
       .then(() => saveWorkspace(next))
@@ -227,7 +225,6 @@ export function App() {
         selectTab(cycleTab(sessions, active, action === "nextTab" ? 1 : -1));
       else if (action === "snippets" || action === "library") {
         setPage(action === "snippets" ? "Snippets" : "Hosts");
-        setHistoryTab(false);
         setActive("library");
       } else if (action.startsWith("tab")) {
         const index =
@@ -581,182 +578,101 @@ export function App() {
                       }
                     />
                   ))}
-                {page === "Snippets" && (
-                  <>
-                    <div className="segmented content-tabs">
-                      <button
-                        type="button"
-                        className={!historyTab ? "chosen" : ""}
-                        onClick={() => setHistoryTab(false)}
-                      >
-                        <Code size={16} />
-                        Snippets <span>{workspace.snippets.length}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={historyTab ? "chosen" : ""}
-                        onClick={() => setHistoryTab(true)}
-                      >
-                        <ClockCounterClockwise size={16} />
-                        Shell history <span>{workspace.history.length}</span>
-                      </button>
-                    </div>
-                    {historyTab ? (
-                      <>
-                        <div className="section-row">
-                          <p className="muted">
-                            Import your shell history to turn useful commands
-                            into snippets.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setEditor({ type: "history" })}
-                          >
-                            <UploadSimple size={16} />
-                            Import history
-                          </button>
-                        </div>
-                        {workspace.history.length ? (
-                          workspace.history.map((item) => (
-                            <article className="history-item" key={item.id}>
+                {page === "Snippets" &&
+                  (workspace.snippets.length ? (
+                    <div className="snippet-grid">
+                      {workspace.snippets.map((snippet) => (
+                        <article key={snippet.id} className="snippet-card">
+                          <div className="section-row">
+                            <h3>
                               <Code size={18} />
-                              <div className="item-body">
-                                <code>{item.command}</code>
-                                <p>
-                                  {item.host} ·{" "}
-                                  {new Date(item.date).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditor({
-                                    type: "snippet",
-                                    value: {
-                                      id: "",
-                                      name: "",
-                                      command: item.command,
-                                    },
+                              {snippet.name}
+                            </h3>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label="Edit snippet"
+                              onClick={() =>
+                                setEditor({ type: "snippet", value: snippet })
+                              }
+                            >
+                              <PencilSimple size={16} />
+                            </button>
+                          </div>
+                          <pre>{snippet.command}</pre>
+                          <div className="section-row">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard
+                                  .writeText(snippet.command)
+                                  .then(() => setNotice("Snippet copied."))
+                                  .catch((err) => setNotice(String(err)));
+                              }}
+                            >
+                              <Copy size={15} />
+                              Copy
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label="Delete snippet"
+                              onClick={() => remove("snippets", snippet.id)}
+                            >
+                              <Trash size={16} />
+                            </button>
+                          </div>
+                          <label className="run-snippet">
+                            Run in session
+                            <select
+                              defaultValue=""
+                              onChange={(e) => {
+                                const id = e.target.value;
+                                if (id)
+                                  void native("run_snippet", {
+                                    id,
+                                    snippetId: snippet.id,
                                   })
-                                }
-                              >
-                                <Plus size={15} />
-                                Save as snippet
-                              </button>
-                            </article>
-                          ))
-                        ) : (
-                          <Empty
-                            icon={<ClockCounterClockwise size={31} />}
-                            title="No shell history"
-                            text="Import Bash or Zsh history from a file or paste it here. Select any command to make it a reusable snippet."
-                            action={
-                              <button
-                                type="button"
-                                onClick={() => setEditor({ type: "history" })}
-                              >
-                                Import shell history
-                              </button>
-                            }
-                          />
-                        )}
-                      </>
-                    ) : workspace.snippets.length ? (
-                      <div className="snippet-grid">
-                        {workspace.snippets.map((snippet) => (
-                          <article key={snippet.id} className="snippet-card">
-                            <div className="section-row">
-                              <h3>
-                                <Code size={18} />
-                                {snippet.name}
-                              </h3>
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label="Edit snippet"
-                                onClick={() =>
-                                  setEditor({ type: "snippet", value: snippet })
-                                }
-                              >
-                                <PencilSimple size={16} />
-                              </button>
-                            </div>
-                            <pre>{snippet.command}</pre>
-                            <div className="section-row">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void navigator.clipboard
-                                    .writeText(snippet.command)
-                                    .then(() => setNotice("Snippet copied."))
-                                    .catch((err) => setNotice(String(err)));
-                                }}
-                              >
-                                <Copy size={15} />
-                                Copy
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label="Delete snippet"
-                                onClick={() => remove("snippets", snippet.id)}
-                              >
-                                <Trash size={16} />
-                              </button>
-                            </div>
-                            <label className="run-snippet">
-                              Run in session
-                              <select
-                                defaultValue=""
-                                onChange={(e) => {
-                                  const id = e.target.value;
-                                  if (id)
-                                    void native("run_snippet", {
-                                      id,
-                                      snippetId: snippet.id,
+                                    .then(() => {
+                                      setActive(id);
+                                      setNotice(
+                                        "Snippet sent to the terminal for execution.",
+                                      );
                                     })
-                                      .then(() => {
-                                        setActive(id);
-                                        setNotice(
-                                          "Snippet sent to the terminal for execution.",
-                                        );
-                                      })
-                                      .catch((err) => setNotice(String(err)));
-                                  e.target.value = "";
-                                }}
-                              >
-                                <option value="">Choose an open session</option>
-                                {sessions
-                                  .filter((s) => !s.forward)
-                                  .map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.host.name}
-                                    </option>
-                                  ))}
-                              </select>
-                            </label>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <Empty
-                        icon={<Code size={31} />}
-                        title="No snippets"
-                        text="Save commands and scripts for reuse."
-                        action={
-                          <button
-                            type="button"
-                            className="primary"
-                            onClick={() => createEditor("snippet")}
-                          >
-                            <Plus size={17} />
-                            Add your first snippet
-                          </button>
-                        }
-                      />
-                    )}
-                  </>
-                )}
+                                    .catch((err) => setNotice(String(err)));
+                                e.target.value = "";
+                              }}
+                            >
+                              <option value="">Choose an open session</option>
+                              {sessions
+                                .filter((s) => !s.forward)
+                                .map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.host.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty
+                      icon={<Code size={31} />}
+                      title="No snippets"
+                      text="Save commands and scripts for reuse."
+                      action={
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => createEditor("snippet")}
+                        >
+                          <Plus size={17} />
+                          Add your first snippet
+                        </button>
+                      }
+                    />
+                  ))}
                 {page === "Known hosts" &&
                   (displayedKnown.length ? (
                     <div className="item-list">
@@ -851,14 +767,23 @@ export function App() {
                       onTrustChanged={refreshKnown}
                       onClose={() => closeTab(session.id)}
                       onOS={(id, system) => {
-                        void native<Workspace>("edit_workspace", {
-                          workspace: workspaceRef.current,
-                          kind: "os",
-                          item: { id, system },
-                          remove: false,
-                        })
-                          .then(update)
-                          .catch((err) => setNotice(String(err)));
+                        if (!workspaceRef.current.settings.detectOS) return;
+                        const current = workspaceRef.current;
+                        const clean = system
+                          .replace(/[^a-zA-Z0-9 _.-]/g, "")
+                          .slice(0, 60);
+                        if (
+                          !clean ||
+                          current.hosts.find((host) => host.id === id)
+                            ?.system === clean
+                        )
+                          return;
+                        update({
+                          ...current,
+                          hosts: current.hosts.map((host) =>
+                            host.id === id ? { ...host, system: clean } : host,
+                          ),
+                        });
                       }}
                     />
                   </div>
@@ -875,7 +800,6 @@ export function App() {
                     })
                   }
                   onNewSnippet={() => void createEditor("snippet")}
-                  onImportHistory={() => setEditor({ type: "history" })}
                   onClose={() => setToolsOpen(false)}
                 />
               )}

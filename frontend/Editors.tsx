@@ -27,7 +27,6 @@ export type Editor =
   | { type: "snippet"; value: Snippet }
   | { type: "group"; value: HostGroup }
   | { type: "key" }
-  | { type: "history" }
   | { type: "known" };
 export function EditorModal({
   editor,
@@ -70,7 +69,6 @@ export function EditorModal({
     snippet: "Snippet",
     group: "Host group",
     key: "Add a key",
-    history: "Import shell history",
     known: "Import known hosts",
   };
   const setH = <K extends keyof Host>(key: K, value: Host[K]) =>
@@ -119,17 +117,6 @@ export function EditorModal({
           }),
         );
       }
-      if (editor.type === "history") {
-        onSave(
-          await native("edit_workspace", {
-            workspace,
-            kind: "history",
-            item: text,
-            remove: false,
-          }),
-        );
-      }
-
       if (editor.type === "known") {
         await native("import_known_hosts", { content: text });
         onKnown();
@@ -553,20 +540,13 @@ export function EditorModal({
               </div>
             </>
           )}
-          {(editor.type === "history" || editor.type === "known") && (
+          {editor.type === "known" && (
             <>
               <p className="helper">
-                {editor.type === "history"
-                  ? "Paste Bash or Zsh history, or choose a history file. Review the contents before importing: shell history can contain secrets."
-                  : "Paste entries from an OpenSSH known_hosts file. Only import identities you have verified independently."}
+                Paste entries from an OpenSSH known_hosts file. Only import
+                identities you have verified independently.
               </p>
-              <Field
-                label={
-                  editor.type === "history"
-                    ? "Shell history"
-                    : "Known hosts entries"
-                }
-              >
+              <Field label="Known hosts entries">
                 <textarea
                   className="code-input"
                   required
@@ -609,7 +589,7 @@ export function EditorModal({
                   ? keyMode === "generate"
                     ? "Generate key"
                     : "Import key"
-                  : editor.type === "history" || editor.type === "known"
+                  : editor.type === "known"
                     ? "Import"
                     : "Save changes"}
             </button>

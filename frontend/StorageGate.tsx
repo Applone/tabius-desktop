@@ -100,7 +100,7 @@ export function StorageGate({ children }: { children: ReactNode }) {
               <p>
                 {status.state === "locked"
                   ? "Enter your local storage password to open your workspace."
-                  : "Choose a password to encrypt your hosts, keys, snippets, history, and settings. Existing local data will be encrypted too."}
+                  : "Choose a password to encrypt your hosts, keys, snippets, and settings. Existing local data will be encrypted too."}
               </p>
               {status.keyringUnavailable && (
                 <p className="storage-note">

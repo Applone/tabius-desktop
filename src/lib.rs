@@ -55,12 +55,14 @@ fn private_write(path: &Path, content: &[u8]) -> Result<()> {
 }
 #[tauri::command]
 fn load_workspace(app: tauri::AppHandle) -> Result<Value> {
-    let path = data_dir(&app)?.join("workspace.json");
-    let mut value = if path.exists() {
-        serde_json::from_slice(&local::read(&app, &path)?).map_err(|e| e.to_string())?
-    } else {
-        workspace::empty()
-    };
+    let state = app.state::<local::LocalStorage>();
+    let mut value = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .ok_or("Local storage is locked.")?
+        .read_workspace()?;
     let mut settings = workspace::settings();
     if let Some(saved) = value["settings"].as_object() {
         settings.as_object_mut().unwrap().extend(saved.clone());
@@ -72,8 +74,9 @@ fn load_workspace(app: tauri::AppHandle) -> Result<Value> {
     Ok(value)
 }
 #[tauri::command]
-fn save_workspace(app: tauri::AppHandle, workspace: Value) -> Result<()> {
-    for key in ["hosts", "keys", "snippets", "forwards", "history"] {
+fn save_workspace(app: tauri::AppHandle, mut workspace: Value) -> Result<()> {
+    workspace::remove_legacy_history(&mut workspace);
+    for key in ["hosts", "keys", "snippets", "forwards"] {
         if !workspace[key].is_array() {
             return Err("Invalid workspace.".into());
         }

@@ -54,12 +54,6 @@ export interface Forward {
   destination: string;
   destinationPort: number;
 }
-export interface HistoryEntry {
-  id: string;
-  host: string;
-  command: string;
-  date: string;
-}
 export interface Settings {
   shortcuts?: Partial<Record<ShortcutAction, string>>;
   autoReconnect: boolean;
@@ -81,7 +75,6 @@ export interface Workspace {
   keys: KeyEntry[];
   snippets: Snippet[];
   forwards: Forward[];
-  history: HistoryEntry[];
   settings: Settings;
 }
 export interface KnownHost {

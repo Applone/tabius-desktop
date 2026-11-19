@@ -1,11 +1,4 @@
-import {
-  ClockCounterClockwise,
-  Code,
-  Palette,
-  Play,
-  Plus,
-  X,
-} from "@phosphor-icons/react";
+import { Code, Palette, Play, Plus, X } from "@phosphor-icons/react";
 import { useState } from "react";
 import { native } from "./api";
 import type { Workspace } from "./model";
@@ -15,14 +8,12 @@ export function SessionTools({
   sessionId,
   onTheme,
   onNewSnippet,
-  onImportHistory,
   onClose,
 }: {
   workspace: Workspace;
   sessionId: string;
   onTheme: (theme: string) => void;
   onNewSnippet: () => void;
-  onImportHistory: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState("Snippets");
@@ -30,7 +21,10 @@ export function SessionTools({
   const [error, setError] = useState("");
   async function run(command: string) {
     try {
-      await native("write_session", { id: sessionId, data: `${command}\r` });
+      await native("write_session", {
+        id: sessionId,
+        data: `${command}\r`,
+      });
       setError("");
     } catch (e) {
       setError(String(e));
@@ -52,7 +46,6 @@ export function SessionTools({
       <nav aria-label="Session tools tabs">
         {[
           { name: "Snippets", icon: Code },
-          { name: "History", icon: ClockCounterClockwise },
           { name: "Themes", icon: Palette },
         ].map(({ name, icon: Icon }) => (
           <button
@@ -93,28 +86,24 @@ export function SessionTools({
         ) : (
           <>
             <input
-              aria-label={`Search ${tab.toLowerCase()}`}
-              placeholder={`Search ${tab.toLowerCase()}…`}
+              aria-label="Search snippets"
+              placeholder="Search snippets…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
-            <button
-              type="button"
-              className="tools-add"
-              onClick={tab === "Snippets" ? onNewSnippet : onImportHistory}
-            >
+            <button type="button" className="tools-add" onClick={onNewSnippet}>
               <Plus size={16} />
-              {tab === "Snippets" ? "New snippet" : "Import shell history"}
+              New snippet
             </button>
-            {(tab === "Snippets" ? workspace.snippets : workspace.history)
+            {workspace.snippets
               .filter((item) =>
-                `${"name" in item ? item.name : ""} ${item.command}`
+                `${item.name} ${item.command}`
                   .toLowerCase()
                   .includes(filter.toLowerCase()),
               )
               .map((item) => (
                 <article className="tool-command" key={item.id}>
-                  <strong>{"name" in item ? item.name : item.host}</strong>
+                  <strong>{item.name}</strong>
                   <pre>{item.command}</pre>
                   <button type="button" onClick={() => void run(item.command)}>
                     <Play size={14} />
@@ -122,27 +111,17 @@ export function SessionTools({
                   </button>
                 </article>
               ))}
-            {(tab === "Snippets" ? workspace.snippets : workspace.history)
-              .length === 0 && (
+            {workspace.snippets.length === 0 && (
               <div className="tools-empty">
                 <Code size={26} />
-                <h3>
-                  {tab === "Snippets"
-                    ? "Keep useful commands close"
-                    : "Your imported commands"}
-                </h3>
-                <p>
-                  {tab === "Snippets"
-                    ? "Save a snippet to run it in this session."
-                    : "Import Bash or Zsh history from your Library."}
-                </p>
+                <h3>Keep useful commands close</h3>
+                <p>Save a snippet to run it in this session.</p>
               </div>
             )}
           </>
         )}
         {error && <p role="alert">{error}</p>}
       </div>
-      <footer>Commands run in the active session.</footer>
     </aside>
   );
 }

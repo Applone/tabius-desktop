@@ -200,7 +200,6 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         keys: [],
         snippets: [],
         forwards: [],
-        history: [],
         settings: { ...settings },
       };
       sequence = 0;
@@ -669,6 +668,22 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       container.append(editable);
       await key("KeyS", primaryShift, editable);
       expect(container.querySelector("h1")?.textContent).toBe("Settings");
+    });
+
+    test("the host editor lets the native picker handle Escape before dialog cancellation", async () => {
+      await mount();
+      await click('button[aria-label="Add host to Production"]');
+      const option = container.querySelector("dialog select option");
+      const dialog = option?.closest("dialog");
+      if (!option || !dialog) throw new Error("Missing host editor picker");
+
+      const event = await key("Escape", { key: "Escape" }, option);
+      expect(event.defaultPrevented).toBe(false);
+      expect(dialog.isConnected).toBe(true);
+      await act(async () => {
+        dialog.dispatchEvent(new window.Event("cancel", { cancelable: true }));
+      });
+      expect(dialog.isConnected).toBe(false);
     });
 
     test("host groups render separately and new hosts inherit the chosen group", async () => {

@@ -226,7 +226,7 @@ pub fn args(
         }
         let mut command = String::new();
         if settings.detect_os {
-            command.push_str("printf '\\033]777;tabius-os=%s\\007' \"$(uname -s 2>/dev/null)\"; ");
+            command.push_str("printf '\\033]777;tabius-os=%s\\007' \"$(if [ -r /etc/os-release ]; then . /etc/os-release; printf '%s' \"$ID\"; else uname -s 2>/dev/null; fi)\"; ");
         }
         if !host.startup.is_empty() {
             command.push_str(&host.startup);
@@ -274,6 +274,10 @@ mod tests {
             let arguments = args(&host(), &settings, None, Path::new("/tmp/data")).unwrap();
             assert_eq!(
                 arguments.iter().any(|arg| arg.contains("tabius-os=")),
+                detect_os
+            );
+            assert_eq!(
+                arguments.iter().any(|arg| arg.contains("/etc/os-release")),
                 detect_os
             );
         }

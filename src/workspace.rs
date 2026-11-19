@@ -1,6 +1,5 @@
 use crate::Result;
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use uuid::Uuid;
 
 pub fn id() -> String {
@@ -19,7 +18,18 @@ pub fn settings() -> Value {
     json!({"autoReconnect":false,"bell":false,"optionAsMeta":true,"emulator":"xterm-256color","font":"monospace","fontSize":14,"lineHeight":1.2,"theme":"Graphite","highlighting":true,"detectOS":true,"postQuantum":true,"shortcuts":{}})
 }
 pub fn empty() -> Value {
-    json!({"hosts":[],"groups":[],"keys":[],"snippets":[],"forwards":[],"history":[],"settings":settings()})
+    json!({"hosts":[],"groups":[],"keys":[],"snippets":[],"forwards":[],"settings":settings()})
+}
+pub fn remove_legacy_history(workspace: &mut Value) -> bool {
+    let Some(fields) = workspace.as_object_mut() else {
+        return false;
+    };
+    let history = fields.remove("history");
+    let preference = fields
+        .get_mut("settings")
+        .and_then(Value::as_object_mut)
+        .and_then(|settings| settings.remove("recordHistory"));
+    history.is_some() || preference.is_some()
 }
 #[tauri::command]
 pub fn new_item(kind: String) -> Result<Value> {
@@ -56,30 +66,6 @@ pub fn validate_host(host: &Value) -> Result<()> {
     }
     Ok(())
 }
-pub fn history(text: &str) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut commands = Vec::new();
-    for line in text.lines() {
-        let line = if let Some(rest) = line.strip_prefix(": ") {
-            rest.split_once(';')
-                .filter(|(prefix, _)| {
-                    prefix.split_once(':').is_some_and(|(a, b)| {
-                        !a.is_empty()
-                            && !b.is_empty()
-                            && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit())
-                    })
-                })
-                .map_or(line, |(_, command)| command)
-        } else {
-            line
-        };
-        let line = line.trim();
-        if !line.is_empty() && !line.starts_with('#') && seen.insert(line.to_owned()) {
-            commands.push(line.to_owned());
-        }
-    }
-    commands.into_iter().rev().take(500).collect()
-}
 #[tauri::command]
 pub fn edit_workspace(
     mut workspace: Value,
@@ -93,22 +79,10 @@ pub fn edit_workspace(
         "key" => "keys",
         "forward" => "forwards",
         "snippet" => "snippets",
-        "history" => "history",
         "os" => "hosts",
         _ => return Err("Invalid collection.".into()),
     };
     let item_id = text(&item["id"]).to_owned();
-    if kind == "history" {
-        let commands = history(text(&item));
-        if commands.is_empty() {
-            return Err("No commands found.".into());
-        }
-        let mut entries: Vec<_> = commands.into_iter().map(|command| json!({"id":id(),"host":"Imported history","command":command,"date":now()})).collect();
-        entries.extend(list(&workspace["history"]));
-        entries.truncate(1000);
-        workspace["history"] = json!(entries);
-        return Ok(workspace);
-    }
     if !remove {
         match kind.as_str() {
             "host" => {
@@ -295,14 +269,6 @@ mod tests {
         assert_eq!(w["settings"]["shortcuts"]["closeTab"], "");
     }
     #[test]
-    fn imports_shell_history() {
-        assert_eq!(history("# comment\n: 123:0; ls\npwd\nls\n"), ["pwd", "ls"]);
-        assert_eq!(
-            history(&(0..600).map(|i| format!("echo {i}\n")).collect::<String>()).len(),
-            500
-        );
-    }
-    #[test]
     fn validates_and_cascades_deletions() {
         let mut w = empty();
         let mut h = new_item("host".into()).unwrap();
@@ -368,7 +334,7 @@ mod regression_tests {
         assert_eq!(w["keys"], json!([]));
     }
     #[test]
-    fn validates_forwarding_snippets_and_empty_history() {
+    fn validates_forwarding_and_snippets() {
         let w = empty();
         assert!(
             edit_workspace(
@@ -388,6 +354,5 @@ mod regression_tests {
             )
             .is_err()
         );
-        assert!(edit_workspace(w, "history".into(), json!("# comment\n "), false).is_err());
     }
 }

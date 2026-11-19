@@ -1,7 +1,10 @@
 import {
+  AppleLogo,
+  LinuxLogo,
   PencilSimple,
   HardDrives as Server,
   Trash,
+  WindowsLogo,
 } from "@phosphor-icons/react";
 import type { Host } from "./model";
 
@@ -16,6 +19,16 @@ export function HostCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const system = host.system.toLowerCase();
+  const Icon = /darwin|macos|mac os/.test(system)
+    ? AppleLogo
+    : /windows|mingw/.test(system)
+      ? WindowsLogo
+      : /linux|ubuntu|debian|arch|fedora|centos|alpine|redhat|rhel|rocky|alma|suse|gentoo|nixos/.test(
+            system,
+          )
+        ? LinuxLogo
+        : Server;
   return (
     <article className="host-card">
       <button
@@ -29,8 +42,13 @@ export function HostCard({
           if (event.detail === 0) onConnect();
         }}
       >
-        <span className="host-icon">
-          <Server size={24} />
+        <span
+          className="host-icon"
+          role="img"
+          aria-label={host.system}
+          title={host.system}
+        >
+          <Icon size={24} />
         </span>
         <span className="host-name">{host.name}</span>
         <span className="host-address">

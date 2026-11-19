@@ -7,6 +7,7 @@ import { native } from "./api";
 import { terminalFontFamily } from "./fonts";
 import { HostKeyPrompt, type HostKeyRequest } from "./HostKeyPrompt";
 import type { Forward, Host, Settings } from "./model";
+import { bannerSystem, terminalControl } from "./terminal-input";
 import "@xterm/xterm/css/xterm.css";
 export interface Session {
   fingerprints?: string[];
@@ -64,11 +65,14 @@ export function TerminalPane({
     let disposed = false;
     let ended = false;
     let sessionId: string | undefined;
+    let banner = "";
+    let bannerDone = false;
+    const bannerDecoder = new TextDecoder();
     const term = new XTerm({
       cursorBlink: true,
       macOptionIsMeta: settingsRef.current.optionAsMeta,
       fontFamily: terminalFontFamily(settingsRef.current.font),
-      fontSize: settingsRef.current.fontSize,
+      fontSize: (settingsRef.current.fontSize * 96) / 72,
       lineHeight: settingsRef.current.lineHeight,
       theme: terminalTheme(settingsRef.current, container.current),
     });
@@ -78,6 +82,46 @@ export function TerminalPane({
     term.loadAddon(fit);
     term.open(container.current);
     term.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === "keydown" &&
+        !event.isComposing &&
+        !event.getModifierState("AltGraph")
+      ) {
+        if (
+          event.code === "KeyV" &&
+          event.ctrlKey &&
+          event.shiftKey &&
+          !event.altKey &&
+          !event.metaKey
+        ) {
+          event.preventDefault();
+          if (!event.repeat)
+            void navigator.clipboard
+              ?.readText()
+              .then((text) => {
+                if (!disposed && !hostKeyRef.current) term.paste(text);
+              })
+              .catch((err) => {
+                if (!disposed) setError(`Could not paste: ${String(err)}`);
+              });
+          return false;
+        }
+        const control = terminalControl(event);
+        if (
+          control !== undefined &&
+          (!event.altKey ||
+            settingsRef.current.optionAsMeta ||
+            !/Mac/.test(navigator.platform))
+        ) {
+          event.preventDefault();
+          if (sessionId && !hostKeyRef.current)
+            void native("write_session", {
+              id: sessionId,
+              data: control,
+            }).catch((err) => setError(String(err)));
+          return false;
+        }
+      }
       if (
         event.type !== "keydown" ||
         event.code !== "KeyC" ||
@@ -111,6 +155,7 @@ export function TerminalPane({
         "Compare this reference with SSH’s fingerprint before accepting a new host key.\r\n",
       );
     const input = term.onData((data) => {
+      bannerDone = true;
       if (sessionId && !hostKeyRef.current)
         void native("write_session", { id: sessionId, data }).catch((err) => {
           setError(String(err));
@@ -133,15 +178,30 @@ export function TerminalPane({
       }
     });
     term.parser.registerOscHandler(777, (data) => {
-      if (data.startsWith("tabius-os="))
+      if (settingsRef.current.detectOS && data.startsWith("tabius-os=")) {
+        bannerDone = true;
         osRef.current(session.host.id, data.slice(10));
+      }
       return true;
     });
     const channel = new Channel<Output>();
     channel.onmessage = (message) => {
       if (disposed) return;
-      if (message.type === "data") term.write(new Uint8Array(message.data));
-      else if (message.type === "trustchanged") trustRef.current();
+      if (message.type === "data") {
+        const bytes = new Uint8Array(message.data);
+        if (!bannerDone && settingsRef.current.detectOS) {
+          banner += bannerDecoder.decode(bytes.slice(0, 8192 - banner.length), {
+            stream: true,
+          });
+          const system = bannerSystem(banner);
+          if (system) {
+            osRef.current(session.host.id, system);
+            bannerDone = true;
+          }
+          if (banner.length >= 8192) bannerDone = true;
+        }
+        term.write(bytes);
+      } else if (message.type === "trustchanged") trustRef.current();
       else if (message.type === "hostkey") {
         hostKeyRef.current = message.request;
         setHostKey(message.request);
@@ -221,7 +281,7 @@ export function TerminalPane({
   useEffect(() => {
     if (terminalRef.current && container.current) {
       const options = terminalRef.current.options;
-      options.fontSize = settings.fontSize;
+      options.fontSize = (settings.fontSize * 96) / 72;
       options.fontFamily = terminalFontFamily(settings.font);
       options.lineHeight = settings.lineHeight;
       options.macOptionIsMeta = settings.optionAsMeta;

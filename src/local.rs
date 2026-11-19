@@ -235,6 +235,19 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 impl Store {
+    pub fn read_workspace(&self) -> Result<Value> {
+        let path = self.directory.join("workspace.json");
+        if !path.try_exists().map_err(|e| e.to_string())? {
+            return Ok(crate::workspace::empty());
+        }
+        let mut value = serde_json::from_slice(&self.read(&path)?).map_err(|e| e.to_string())?;
+        if crate::workspace::remove_legacy_history(&mut value) {
+            let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+            self.write(&path, &bytes)?;
+        }
+        Ok(value)
+    }
+
     fn stage_session(&self, scratch: &Path, key_id: &str) -> Result<String> {
         if !key_id.is_empty() {
             crate::ssh::valid_id(key_id)?;
@@ -574,6 +587,31 @@ mod tests {
         }
         fn clear(&self) {
             *self.password.borrow_mut() = None;
+        }
+    }
+
+    #[test]
+    fn loading_a_legacy_workspace_removes_saved_commands_from_storage() {
+        for key in [None, Some(Zeroizing::new([42; 32]))] {
+            let root = tempfile::tempdir().unwrap();
+            let store = Store {
+                directory: root.path().to_owned(),
+                key,
+            };
+            let path = root.path().join("workspace.json");
+            let mut expected = crate::workspace::empty();
+            expected["snippets"] = json!([{"command":"pwd"}]);
+            let mut old = expected.clone();
+            old["history"] = json!([{"command":"old command"}]);
+            old["settings"]["recordHistory"] = json!(true);
+            store
+                .write(&path, &serde_json::to_vec(&old).unwrap())
+                .unwrap();
+            assert_eq!(store.read_workspace().unwrap(), expected);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&store.read(&path).unwrap()).unwrap(),
+                expected
+            );
         }
     }
 

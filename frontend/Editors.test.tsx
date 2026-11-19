@@ -30,7 +30,6 @@ function chainSelect(current: Host, hosts: Host[]): string {
     keys: [],
     snippets: [],
     forwards: [],
-    history: [],
     settings: {
       autoReconnect: false,
       bell: false,

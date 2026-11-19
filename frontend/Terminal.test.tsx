@@ -35,6 +35,9 @@ globalThis.cancelAnimationFrame = browser.cancelAnimationFrame.bind(
 ) as unknown as typeof cancelAnimationFrame;
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 Reflect.set(window, "__TAURI_INTERNALS__", { transformCallback: () => 1 });
+const readClipboard = mock(async () => "pasted command");
+const pasted = mock((_text: string) => {});
+const osDetected = mock((_id: string, _os: string) => {});
 const copy = mock(async (_text: string) => {});
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
@@ -42,7 +45,7 @@ Object.defineProperty(globalThis, "navigator", {
 });
 Object.defineProperty(browser.navigator, "clipboard", {
   configurable: true,
-  value: { writeText: copy },
+  value: { writeText: copy, readText: readClipboard },
 });
 
 let terminalInput: ((data: string) => void) | undefined;
@@ -57,7 +60,15 @@ class FakeTerminal {
     this.options = { ...options };
     terminals.push(this);
   }
-  parser = { registerOscHandler: () => {} };
+  osc: ((data: string) => boolean) | undefined;
+  parser = {
+    registerOscHandler: (_code: number, handler: (data: string) => boolean) => {
+      this.osc = handler;
+    },
+  };
+  paste(text: string) {
+    pasted(text);
+  }
   loadAddon() {}
   open() {}
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
@@ -147,6 +158,8 @@ const settings: Settings = {
   postQuantum: true,
 };
 beforeEach(() => {
+  osDetected.mockClear();
+  pasted.mockClear();
   failStart = false;
   terminalInput = undefined;
   terminals.length = 0;
@@ -191,7 +204,7 @@ async function mount(active = false, preferences = settings) {
         focusRequest={0}
         settings={preferences}
         onClose={close}
-        onOS={() => {}}
+        onOS={osDetected}
         onTrustChanged={trustChanged}
       />,
     ),
@@ -246,15 +259,14 @@ test("ordinary Ctrl+C still reaches the shell even when text is selected", async
   if (terminals[0]) terminals[0].selection = "selected output";
   const { event, process } = await terminalKey({ key: "c", shiftKey: false });
   expect(copy).not.toHaveBeenCalled();
-  expect(process).toBe(true);
-  expect(event.defaultPrevented).toBe(false);
+  expect(process).toBe(false);
+  expect(event.defaultPrevented).toBe(true);
   expect(invoke).toHaveBeenCalledWith("write_session", {
     id: session.id,
     data: "\x03",
   });
 });
 test.each([
-  { code: "KeyV", key: "V" },
   { ctrlKey: false, metaKey: true, shiftKey: false },
   { altKey: true },
   { isComposing: true },
@@ -303,7 +315,7 @@ test("an unavailable clipboard API reports an error instead of interrupting SSH"
     ).toHaveLength(0);
   } finally {
     Object.defineProperty(browser.navigator, "clipboard", {
-      value: { writeText: copy },
+      value: { writeText: copy, readText: readClipboard },
     });
   }
 });
@@ -562,4 +574,24 @@ test("terminal input pauses during verification and resumes after approval", asy
     id: "session-test",
     data: "uptime\r",
   });
+});
+
+test("physical paste and shell controls work with Cyrillic key values", async () => {
+  await mount(true);
+  await terminalKey({ code: "KeyV", key: "М" });
+  expect(pasted).toHaveBeenCalledWith("pasted command");
+  await terminalKey({ code: "KeyR", key: "к", shiftKey: false });
+  expect(invoke).toHaveBeenCalledWith("write_session", {
+    id: session.id,
+    data: "\x12",
+  });
+});
+test("OS markers respect detection settings and font size uses points", async () => {
+  await mount(true);
+  expect(terminals[0]?.options.fontSize).toBeCloseTo((14 * 96) / 72);
+  terminals[0]?.osc?.("tabius-os=ubuntu");
+  expect(osDetected).not.toHaveBeenCalled();
+  await mount(true, { ...settings, detectOS: true });
+  terminals[0]?.osc?.("tabius-os=ubuntu");
+  expect(osDetected).toHaveBeenCalledWith(session.host.id, "ubuntu");
 });

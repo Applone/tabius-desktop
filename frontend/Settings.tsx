@@ -111,7 +111,7 @@ export function SettingsView({
                 {[10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32].map(
                   (v) => (
                     <option key={v} value={v}>
-                      {v} px
+                      {v} pt
                     </option>
                   ),
                 )}
@@ -158,7 +158,7 @@ export function SettingsView({
             className={`terminal-preview ${s.theme.toLowerCase()}`}
             style={{
               fontFamily: terminalFontFamily(s.font),
-              fontSize: s.fontSize,
+              fontSize: `${s.fontSize}pt`,
               lineHeight: s.lineHeight,
             }}
           >
