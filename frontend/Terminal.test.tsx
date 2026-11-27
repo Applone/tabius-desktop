@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
 import type { Channel } from "@tauri-apps/api/core";
-import type { ITerminalOptions } from "@xterm/xterm";
+import { WebglAddon } from "@xterm/addon-webgl";
+import type { ITerminalAddon, ITerminalOptions } from "@xterm/xterm";
 import { Window as HappyWindow } from "happy-dom";
 import { act } from "react";
 import * as originalApi from "./api";
@@ -42,6 +43,7 @@ Reflect.set(window, "__TAURI_INTERNALS__", {
 const pasted = mock((_text: string) => {});
 const osDetected = mock((_id: string, _os: string) => {});
 const copy = mock(async (_text: string) => {});
+const loadRenderer = mock((_addon: WebglAddon) => {});
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
   value: browser.navigator,
@@ -72,7 +74,9 @@ class FakeTerminal {
   paste(text: string) {
     pasted(text);
   }
-  loadAddon() {}
+  loadAddon(addon: ITerminalAddon) {
+    if (addon instanceof WebglAddon) loadRenderer(addon);
+  }
   open() {}
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
     this.keyHandler = handler;
@@ -171,6 +175,7 @@ beforeEach(() => {
   resolveStart = undefined;
   copy.mockReset();
   copy.mockResolvedValue(undefined);
+  loadRenderer.mockReset();
   readClipboard.mockReset();
   readClipboard.mockResolvedValue("pasted command");
   invoke.mockClear();
@@ -375,6 +380,39 @@ test("terminal viewport padding matches each theme instead of xterm's black defa
     style.remove();
   }
 });
+test("dark terminal themes blend ANSI black Powerline segments into the terminal background", async () => {
+  const style = document.createElement("style");
+  style.textContent = await Bun.file(
+    new URL("./style.css", import.meta.url),
+  ).text();
+  document.head.append(style);
+  try {
+    for (const theme of ["Graphite", "Midnight"] as const) {
+      await mount(true, { ...settings, theme });
+      const palette = terminals[0]?.options.theme;
+      expect(palette?.background).toBeTruthy();
+      expect(palette?.black).toBe(palette?.background);
+    }
+    await mount(true, { ...settings, theme: "Paper" });
+    expect(terminals[0]?.options.theme?.black).toBeUndefined();
+  } finally {
+    style.remove();
+  }
+});
+test("terminal sessions still run if the webview cannot load the Powerline renderer", async () => {
+  loadRenderer.mockImplementationOnce(() => {
+    throw new Error("WebGL is unavailable");
+  });
+  await mount(true);
+  expect(loadRenderer).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Running");
+  expect(terminals[0]?.options.theme).toMatchObject({
+    blue: "#8cafe0",
+    green: "#8ac5a1",
+    yellow: "#d6be89",
+    cursor: "#84d5b3",
+  });
+});
 test("terminal fitting leaves room for padding around every row and column", async () => {
   const style = document.createElement("style");
   style.textContent = await Bun.file(
@@ -428,21 +466,39 @@ test("terminal fitting leaves room for padding around every row and column", asy
     style.remove();
   }
 });
-test("reconnect is hidden while connecting, running, and after a clean logout", async () => {
+test("a clean exit without a logout request leaves the tab open", async () => {
   deferStart = true;
   await mount();
   expect(reconnect()).toBeUndefined();
   await act(async () => resolveStart?.("session-test"));
   expect(container.textContent).toContain("Running");
   expect(reconnect()).toBeUndefined();
-  await emit({ type: "exit", code: 0 });
+  await emit({ type: "exit", code: 0, manual: false });
   expect(container.textContent).toContain("Disconnected");
   expect(reconnect()).toBeUndefined();
+  expect(close).not.toHaveBeenCalled();
+});
+test("Ctrl+D is sent to SSH and a confirmed manual exit closes the tab", async () => {
+  await mount(true);
+  const { process } = await terminalKey({
+    code: "KeyD",
+    key: "d",
+    shiftKey: false,
+  });
+  expect(process).toBe(false);
+  expect(invoke).toHaveBeenCalledWith("write_session", {
+    id: session.id,
+    data: "\x04",
+  });
+  expect(close).not.toHaveBeenCalled();
+  await emit({ type: "exit", code: 1, manual: true });
+  expect(close).toHaveBeenCalledTimes(1);
 });
 test("SSH errors offer reconnect and retry hides it until another failure", async () => {
   await mount();
-  await emit({ type: "exit", code: 255 });
+  await emit({ type: "exit", code: 255, manual: false });
   expect(reconnect()).toBeDefined();
+  expect(close).not.toHaveBeenCalled();
   await act(async () => reconnect()?.click());
   expect(reconnect()).toBeUndefined();
   expect(
@@ -450,7 +506,7 @@ test("SSH errors offer reconnect and retry hides it until another failure", asyn
   ).toHaveLength(2);
   await emit({ type: "status", status: "Reconnecting" });
   expect(reconnect()).toBeUndefined();
-  await emit({ type: "exit", code: -1 });
+  await emit({ type: "exit", code: -1, manual: false });
   expect(reconnect()).toBeDefined();
 });
 test("start failures offer reconnect", async () => {
@@ -462,7 +518,7 @@ test("start failures offer reconnect", async () => {
 test("an early exit is not overwritten by the start acknowledgement", async () => {
   deferStart = true;
   await mount();
-  await emit({ type: "exit", code: 255 });
+  await emit({ type: "exit", code: 255, manual: false });
   await act(async () => resolveStart?.("session-test"));
   expect(container.textContent).toContain("Disconnected");
   expect(reconnect()).toBeDefined();
@@ -538,7 +594,7 @@ test("Escape aborts verification and connection exit removes pending dialogs", a
     ),
   );
   expect(close).toHaveBeenCalledTimes(1);
-  await emit({ type: "exit", code: 255 });
+  await emit({ type: "exit", code: 255, manual: false });
   expect(container.querySelector("dialog")).toBeNull();
 });
 test("failed approval stays visible with an error and can still be aborted", async () => {

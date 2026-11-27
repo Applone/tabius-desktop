@@ -90,3 +90,16 @@ test("detected host systems choose their OS logo", () => {
     );
   }
 });
+
+test("macOS host cards display the Apple mark with an accessible system label", () => {
+  const markup = renderToStaticMarkup(
+    <HostCard
+      host={{ ...host, system: "macOS" }}
+      onConnect={() => {}}
+      onEdit={() => {}}
+      onDelete={() => {}}
+    />,
+  );
+  expect(markup).toContain('role="img" aria-label="macOS"');
+  expect(markup).toMatch(/<img src="[^"]*\/apple\.svg" alt=""/);
+});

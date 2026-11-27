@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub fn program(name: &str) -> Result<PathBuf, String> {
     #[cfg(windows)]
@@ -57,6 +58,82 @@ pub struct Forward {
     pub destination: String,
     pub destination_port: u16,
 }
+
+pub struct ExitInput {
+    line: Option<String>,
+    requested_at: Option<Instant>,
+}
+
+impl Default for ExitInput {
+    fn default() -> Self {
+        Self {
+            line: Some(String::new()),
+            requested_at: None,
+        }
+    }
+}
+
+impl ExitInput {
+    pub fn record(&mut self, data: &str, now: Instant) {
+        self.requested_at = None;
+        if data == "\x04" {
+            self.requested_at = Some(now);
+            return;
+        }
+        let data = data
+            .strip_prefix("\x1b[200~")
+            .and_then(|paste| paste.strip_suffix("\x1b[201~"))
+            .unwrap_or(data);
+        for byte in data.bytes() {
+            self.requested_at = None;
+            match byte {
+                b'\r' | b'\n' => {
+                    if let Some(line) = &self.line {
+                        let mut words = line.split_ascii_whitespace();
+                        let is_exit = match (words.next(), words.next(), words.next()) {
+                            (Some("exit" | "logout"), None, None) => true,
+                            (Some("exit" | "logout"), Some(code), None) => {
+                                code.parse::<i64>().is_ok()
+                            }
+                            _ => false,
+                        };
+                        if is_exit {
+                            self.requested_at = Some(now);
+                        }
+                    }
+                    self.line = Some(String::new());
+                }
+                b'\x03' | b'\x15' => self.line = Some(String::new()),
+                b'\x08' | b'\x7f' => {
+                    if let Some(line) = &mut self.line {
+                        line.pop();
+                    }
+                }
+                b' '..=b'~' | b'\t' => {
+                    if let Some(line) = &mut self.line {
+                        if line.len() < 32 {
+                            line.push(char::from(byte));
+                        } else {
+                            self.line = None;
+                        }
+                    }
+                }
+                _ => self.line = None,
+            }
+        }
+    }
+
+    pub fn confirms_exit(&self, status: &portable_pty::ExitStatus, now: Instant) -> bool {
+        // EOF can be consumed by a command or nested shell. Only associate a
+        // recent request with an exit, and keep SSH transport errors visible.
+        status.signal().is_none()
+            && status.exit_code() < 255
+            && self
+                .requested_at
+                .is_some_and(|time| now.saturating_duration_since(time) <= Duration::from_secs(5))
+    }
+}
+
 pub fn address(value: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 253
@@ -240,6 +317,46 @@ pub fn args(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use portable_pty::ExitStatus;
+
+    #[test]
+    fn eof_marks_a_recent_terminal_exit_as_manual() {
+        let now = Instant::now();
+        let mut input = ExitInput::default();
+        let success = ExitStatus::with_exit_code(0);
+        assert!(!input.confirms_exit(&success, now));
+
+        input.record("\x04", now);
+        assert!(input.confirms_exit(&success, now));
+        assert!(input.confirms_exit(&ExitStatus::with_exit_code(1), now));
+        assert!(!input.confirms_exit(&ExitStatus::with_exit_code(255), now));
+        assert!(!input.confirms_exit(&ExitStatus::with_signal("SIGTERM"), now));
+        assert!(!input.confirms_exit(&success, now + Duration::from_secs(6)));
+
+        input.record("ls\r", now);
+        assert!(!input.confirms_exit(&success, now));
+    }
+
+    #[test]
+    fn submitted_logout_commands_mark_an_exit_as_manual() {
+        let now = Instant::now();
+        let mut input = ExitInput::default();
+        let success = ExitStatus::with_exit_code(0);
+        input.record("e", now);
+        input.record("xit", now);
+        assert!(!input.confirms_exit(&success, now));
+        input.record("\r", now);
+        assert!(input.confirms_exit(&success, now));
+
+        input.record("echo exit\r", now);
+        assert!(!input.confirms_exit(&success, now));
+        input.record("exitz\x7f 42\r", now);
+        assert!(input.confirms_exit(&ExitStatus::with_exit_code(42), now));
+        input.record("\x1b[200~logout\x1b[201~", now);
+        input.record("\r", now);
+        assert!(input.confirms_exit(&success, now));
+    }
+
     fn host() -> Host {
         Host {
             address: "example.com".into(),

@@ -866,8 +866,13 @@ pre,
   border: 1px solid var(--border);
   box-shadow: var(--surface-edge), var(--surface-shadow);
 }
+.snippet-card h3 {
+  margin-inline-start: 8px;
+}
 .snippet-card pre {
-  min-height: 95px;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
   padding: 14px;
   border-radius: 5px;
   background: var(--bg);
@@ -1631,14 +1636,13 @@ button.paper:active {
 }
 .session-tools > :where(nav) {
   display: flex;
-  padding: 0 10px;
+  padding: 0 10px 8px;
   gap: 2px;
   border-bottom: 1px solid var(--border);
 }
 .session-tools > :where(nav) :where(button) {
   flex: 1;
   padding: 9px 6px;
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
   border: 0;
@@ -1646,7 +1650,6 @@ button.paper:active {
 }
 .session-tools > :where(nav) :where(button).chosen {
   background: var(--raised);
-  border-radius: 7px;
   color: var(--accent-hover);
 }
 .tools-content {

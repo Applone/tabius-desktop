@@ -1,11 +1,11 @@
 import {
-  AppleLogo,
   LinuxLogo,
   PencilSimple,
   HardDrives as Server,
   Trash,
   WindowsLogo,
 } from "@phosphor-icons/react";
+import appleIcon from "./assets/tabius/apple.svg";
 import type { Host } from "./model";
 
 export function HostCard({
@@ -20,15 +20,14 @@ export function HostCard({
   onDelete: () => void;
 }) {
   const system = host.system.toLowerCase();
-  const Icon = /darwin|macos|mac os/.test(system)
-    ? AppleLogo
-    : /windows|mingw/.test(system)
-      ? WindowsLogo
-      : /linux|ubuntu|debian|arch|fedora|centos|alpine|redhat|rhel|rocky|alma|suse|gentoo|nixos/.test(
-            system,
-          )
-        ? LinuxLogo
-        : Server;
+  const isMac = /darwin|macos|mac os/.test(system);
+  const Icon = /windows|mingw/.test(system)
+    ? WindowsLogo
+    : /linux|ubuntu|debian|arch|fedora|centos|alpine|redhat|rhel|rocky|alma|suse|gentoo|nixos/.test(
+          system,
+        )
+      ? LinuxLogo
+      : Server;
   return (
     <article className="host-card">
       <button
@@ -48,7 +47,11 @@ export function HostCard({
           aria-label={host.system}
           title={host.system}
         >
-          <Icon size={24} />
+          {isMac ? (
+            <img src={appleIcon} alt="" width={24} height={24} />
+          ) : (
+            <Icon size={24} />
+          )}
         </span>
         <span className="host-name">{host.name}</span>
         <span className="host-address">

@@ -35,10 +35,12 @@ const unmounts: string[] = [];
 function MockTerminal({
   session,
   active,
+  onClose,
   onTrustChanged,
 }: {
   session: { id: string };
   active: boolean;
+  onClose: () => void;
   onTrustChanged: () => void;
 }) {
   useEffect(() => {
@@ -52,6 +54,9 @@ function MockTerminal({
       <textarea aria-label={`Terminal ${session.id}`} />
       <button type="button" onClick={onTrustChanged}>
         Accept test fingerprint
+      </button>
+      <button type="button" onClick={onClose}>
+        Report logout
       </button>
     </div>
   );
@@ -114,7 +119,11 @@ const invoke = mock(
     if (name === "known_hosts") return trustedHosts;
     if (name === "display_known") return args?.known ?? [];
     if (name === "prepare_session")
-      return { id: `session-${++sequence}`, host: args?.host };
+      return {
+        id: `session-${++sequence}`,
+        host: args?.host,
+        forward: args?.forward,
+      };
     if (name === "new_item")
       return args?.kind === "group"
         ? { id: "new-group", name: "" }
@@ -493,6 +502,68 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       expect(selectedTab()).toBe("Library");
       await key("KeyS", primaryShift);
       expect(container.querySelector("h1")?.textContent).toBe("Snippets");
+    });
+
+    test("terminal logouts remove their tabs and keep the selection valid", async () => {
+      await mount();
+      await openHost();
+      await openHost(1);
+      await click('[role="tab"]', "SFTP");
+      await click('[data-session="session-1"] button', "Report logout");
+      expect(selectedTab()).toBe("SFTP");
+      expect(unmounts).toEqual(["session-1"]);
+
+      await openHost();
+      const logoutButtons = [
+        ...container.querySelectorAll<HTMLButtonElement>(".xterm button"),
+      ].filter((button) => button.textContent === "Report logout");
+      expect(logoutButtons).toHaveLength(2);
+      await act(async () => {
+        for (const button of logoutButtons.reverse()) button.click();
+      });
+      expect(selectedTab()).toBe("Library");
+      expect(unmounts).toEqual(["session-1", "session-2", "session-3"]);
+    });
+
+    test("only interactive terminal tabs show the Session tools toggle", async () => {
+      workspace.forwards = [
+        {
+          id: "tunnel",
+          name: "Local tunnel",
+          hostId: "Alpha",
+          kind: "local",
+          bindAddress: "127.0.0.1",
+          bindPort: 8080,
+          destination: "127.0.0.1",
+          destinationPort: 80,
+        },
+      ];
+      const toggle = 'button[aria-label="Toggle session tools"]';
+      await mount();
+      expect(container.querySelector(toggle)).toBeNull();
+
+      await click(".sidebar nav button span", "Port forwarding");
+      await click("button", "Open tunnel");
+      expect(selectedTab()).toBe("Alpha · Tunnel");
+      expect(container.querySelector(toggle)).toBeNull();
+
+      await openHost();
+      expect(
+        container.querySelector(toggle)?.getAttribute("aria-pressed"),
+      ).toBe("true");
+      await click(toggle);
+      expect(container.querySelector(".session-tools")).toBeNull();
+      expect(
+        container.querySelector(toggle)?.getAttribute("aria-pressed"),
+      ).toBe("false");
+      await click('[role="tab"]', "SFTP");
+      expect(container.querySelector(toggle)).toBeNull();
+      await click('[role="tab"]', "Library");
+      expect(container.querySelector(toggle)).toBeNull();
+
+      await click('[role="tab"]', "Alpha");
+      await click(toggle);
+      expect(container.querySelector(".session-tools")).not.toBeNull();
     });
 
     test("terminal tools and SFTP preserve sessions while freeing Library navigation", async () => {

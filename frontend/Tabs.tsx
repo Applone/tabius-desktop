@@ -52,7 +52,7 @@ export function Tabs({
   onTools,
   toolsOpen,
 }: {
-  onTools: () => void;
+  onTools?: () => void;
   toolsOpen: boolean;
   sessions: Session[];
   active: string;
@@ -214,15 +214,17 @@ export function Tabs({
           <Plus size={17} />
         </button>
       </div>
-      <button
-        type="button"
-        className="icon-button tools-toggle"
-        aria-label="Toggle session tools"
-        aria-pressed={toolsOpen}
-        onClick={onTools}
-      >
-        <SidebarSimple size={19} />
-      </button>
+      {onTools && (
+        <button
+          type="button"
+          className="icon-button tools-toggle"
+          aria-label="Toggle session tools"
+          aria-pressed={toolsOpen}
+          onClick={onTools}
+        >
+          <SidebarSimple size={19} />
+        </button>
+      )}
     </div>
   );
 }

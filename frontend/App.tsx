@@ -74,8 +74,10 @@ export function App() {
   const [page, setPage] = useState<Page>("Hosts");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [importingSSH, setImportingSSH] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [active, setActive] = useState("library");
+  const [{ sessions, active }, setTabs] = useState({
+    sessions: [] as Session[],
+    active: "library",
+  });
   const [toolsOpen, setToolsOpen] = useState(true);
   const [sftpVisited, setSftpVisited] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -131,8 +133,11 @@ export function App() {
         host,
         forward: forward ?? null,
       });
-      setSessions((items) => [...items, session]);
-      selectTab(session.id);
+      setTabs((tabs) => ({
+        sessions: [...tabs.sessions, session],
+        active: session.id,
+      }));
+      setFocusRequest((value) => value + 1);
     } catch (err) {
       setNotice(String(err));
     }
@@ -202,13 +207,21 @@ export function App() {
   }
   function selectTab(id: string, focusTerminal = true) {
     if (id === "sftp") setSftpVisited(true);
-    setActive(id);
+    setTabs((tabs) =>
+      id === "library" ||
+      id === "sftp" ||
+      tabs.sessions.some((session) => session.id === id)
+        ? { ...tabs, active: id }
+        : tabs,
+    );
     if (focusTerminal) setFocusRequest((value) => value + 1);
   }
   function closeTab(id: string) {
-    setSessions((items) => items.filter((item) => item.id !== id));
-    if (active === id) selectTab(adjacentTab(sessions, id));
-    else setFocusRequest((value) => value + 1);
+    setTabs((tabs) => ({
+      sessions: tabs.sessions.filter((item) => item.id !== id),
+      active: tabs.active === id ? adjacentTab(tabs.sessions, id) : tabs.active,
+    }));
+    setFocusRequest((value) => value + 1);
   }
   useShortcuts(
     workspace.settings.shortcuts,
@@ -225,7 +238,7 @@ export function App() {
         selectTab(cycleTab(sessions, active, action === "nextTab" ? 1 : -1));
       else if (action === "snippets" || action === "library") {
         setPage(action === "snippets" ? "Snippets" : "Hosts");
-        setActive("library");
+        selectTab("library", false);
       } else if (action.startsWith("tab")) {
         const index =
           action === "tab9" ? sessions.length - 1 : Number(action.slice(3)) - 1;
@@ -234,6 +247,7 @@ export function App() {
     },
   );
   const activeSession = sessions.find((s) => s.id === active);
+  const interactiveSession = activeSession?.forward ? undefined : activeSession;
   const [displayedKnown, setDisplayedKnown] = useState<KnownHost[]>([]);
   useEffect(() => {
     if (loaded)
@@ -258,12 +272,17 @@ export function App() {
           active={active}
           disabled={syncing}
           onSelect={selectTab}
-          onTools={() => setToolsOpen((open) => !open)}
+          onTools={
+            interactiveSession ? () => setToolsOpen((open) => !open) : undefined
+          }
           toolsOpen={toolsOpen}
           onClose={closeTab}
           onNew={() => setChoosingHost(true)}
           onReorder={(source, target, after) =>
-            setSessions((items) => reorderTabs(items, source, target, after))
+            setTabs((tabs) => ({
+              ...tabs,
+              sessions: reorderTabs(tabs.sessions, source, target, after),
+            }))
           }
         />
       )}
@@ -285,7 +304,7 @@ export function App() {
               }
               onClick={() => {
                 setPage(name);
-                setActive("library");
+                selectTab("library", false);
               }}
             >
               <span
@@ -312,7 +331,7 @@ export function App() {
             }
             onClick={() => {
               setPage("Settings");
-              setActive("library");
+              selectTab("library", false);
             }}
           >
             <GearSix size={19} />
@@ -634,7 +653,7 @@ export function App() {
                                     snippetId: snippet.id,
                                   })
                                     .then(() => {
-                                      setActive(id);
+                                      selectTab(id, false);
                                       setNotice(
                                         "Snippet sent to the terminal for execution.",
                                       );
@@ -789,10 +808,10 @@ export function App() {
                   </div>
                 ))}
               </div>
-              {activeSession && !activeSession.forward && toolsOpen && (
+              {interactiveSession && toolsOpen && (
                 <SessionTools
                   workspace={workspace}
-                  sessionId={activeSession.id}
+                  sessionId={interactiveSession.id}
                   onTheme={(theme) =>
                     update({
                       ...workspace,

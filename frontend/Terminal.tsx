@@ -2,6 +2,7 @@ import { ArrowClockwise, X } from "@phosphor-icons/react";
 import { Channel } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { native } from "./api";
@@ -18,7 +19,7 @@ export interface Session {
 }
 type Output =
   | { type: "data"; data: number[] }
-  | { type: "exit"; code: number }
+  | { type: "exit"; code: number; manual: boolean }
   | { type: "trustchanged" }
   | { type: "hostkey"; request: HostKeyRequest }
   | { type: "status"; status: string };
@@ -48,6 +49,8 @@ export function TerminalPane({
   osRef.current = onOS;
   const trustRef = useRef(onTrustChanged);
   trustRef.current = onTrustChanged;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState("Connecting");
   const [error, setError] = useState("");
@@ -82,6 +85,16 @@ export function TerminalPane({
     fitRef.current = fit;
     term.loadAddon(fit);
     term.open(container.current);
+    // The WebGL renderer draws Powerline separators to the cell edges.
+    let renderer: WebglAddon | undefined;
+    try {
+      renderer = new WebglAddon();
+      renderer.onContextLoss(() => renderer?.dispose());
+      term.loadAddon(renderer);
+    } catch {
+      // Keep the terminal usable when the webview cannot provide WebGL.
+      renderer?.dispose();
+    }
     term.attachCustomKeyEventHandler((event) => {
       if (
         event.type === "keydown" &&
@@ -213,9 +226,13 @@ export function TerminalPane({
         if (message.status === "Reconnecting" || message.status === "Running")
           setFailed(false);
       } else {
+        ended = true;
+        if (message.manual) {
+          closeRef.current();
+          return;
+        }
         hostKeyRef.current = null;
         setHostKey(null);
-        ended = true;
         setFailed(message.code !== 0);
         setStatus("Disconnected");
         term.writeln(
@@ -363,10 +380,12 @@ function terminalTheme(settings: Settings, surface: HTMLElement) {
     },
     Paper: { foreground: "#313b36", cursor: "#2d735b" },
   };
+  const background = getComputedStyle(surface).backgroundColor;
   return {
     ...themes[settings.theme],
-    // Match the canvas to its CSS surface, including padding and theme previews.
-    background: getComputedStyle(surface).backgroundColor,
+    background,
+    // Powerline prompts use ANSI black as the background of dark segments.
+    ...(settings.theme !== "Paper" && { black: background }),
     ...(settings.highlighting
       ? {
           red: "#e68a89",

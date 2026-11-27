@@ -35,6 +35,7 @@ struct Session {
     pid: u32,
     cancelled: Arc<AtomicBool>,
     approvals: Arc<host_key::Approvals>,
+    exit_input: ssh::ExitInput,
     rows: u16,
     cols: u16,
 }
@@ -101,7 +102,7 @@ fn save_workspace(app: tauri::AppHandle, mut workspace: Value) -> Result<()> {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Output {
     Data { data: Vec<u8> },
-    Exit { code: i32 },
+    Exit { code: i32, manual: bool },
     Status { status: String },
     TrustChanged,
     HostKey { request: host_key::Request },
@@ -200,6 +201,7 @@ fn start_session(
             pid,
             cancelled: cancelled.clone(),
             approvals: broker.approvals.clone(),
+            exit_input: ssh::ExitInput::default(),
             rows,
             cols,
         },
@@ -232,23 +234,28 @@ fn start_session(
                     Err(_) => break,
                 }
             }
-            let code = child
-                .wait()
-                .ok()
-                .map(|s| s.exit_code() as i32)
-                .unwrap_or(-1);
+            let status = child.wait().ok();
+            let code = status.as_ref().map_or(-1, |s| s.exit_code() as i32);
             let reconnect = code == 255
                 && load_workspace(app.clone())
                     .is_ok_and(|w| w["settings"]["autoReconnect"] == true);
             if !reconnect || cancelled.load(Ordering::Acquire) {
+                let mut manual = false;
                 if let Ok(mut map) = shared.0.lock()
                     && map
                         .get(&thread_id)
                         .is_some_and(|session| session.pid == pid)
+                    && let Some(session) = map.remove(&thread_id)
                 {
-                    map.remove(&thread_id);
+                    manual = forward.is_none()
+                        && !cancelled.load(Ordering::Acquire)
+                        && status.as_ref().is_some_and(|status| {
+                            session
+                                .exit_input
+                                .confirms_exit(status, std::time::Instant::now())
+                        });
                 }
-                let _ = on_output.send(Output::Exit { code });
+                let _ = on_output.send(Output::Exit { code, manual });
                 break;
             }
             if let Ok(mut map) = shared.0.lock() {
@@ -291,6 +298,7 @@ fn start_session(
                     reader = next_reader;
                     session.pid = pid;
                     session.master = process.master;
+                    session.exit_input = ssh::ExitInput::default();
                     let _ = on_output.send(Output::Status {
                         status: "Running".into(),
                     });
@@ -298,7 +306,10 @@ fn start_session(
                 Err(error) => {
                     let _ = on_output.send(Output::Status { status: error });
                     map.remove(&thread_id);
-                    let _ = on_output.send(Output::Exit { code: -1 });
+                    let _ = on_output.send(Output::Exit {
+                        code: -1,
+                        manual: false,
+                    });
                     break;
                 }
             }
@@ -323,15 +334,14 @@ fn write_session(sessions: State<'_, Sessions>, id: String, data: String) -> Res
     if data.len() > 1024 * 1024 {
         return Err("Input is too large.".into());
     }
-    sessions
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get_mut(&id)
-        .ok_or("Session is no longer running.")?
+    let mut map = sessions.0.lock().map_err(|e| e.to_string())?;
+    let session = map.get_mut(&id).ok_or("Session is no longer running.")?;
+    session
         .master
         .write_all(data.as_bytes())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    session.exit_input.record(&data, std::time::Instant::now());
+    Ok(())
 }
 #[tauri::command]
 fn answer_host_key(

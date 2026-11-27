@@ -55,11 +55,14 @@ Tag pushes publish releases after checks pass. Tags must match the versions in
 Double-click a host to connect, or focus it and press Enter/Space. Drag tabs to
 reorder sessions. The plus button opens a host picker searchable by name,
 address, or group. Deleting a group keeps its hosts in Ungrouped.
+Logging out with Ctrl+D, `exit`, or `logout` closes the terminal tab when the
+remote shell exits. Connection failures leave the tab open for inspection or
+reconnect.
 
 The top bar provides **Library**, **SFTP**, and your terminal tabs. Library contains
 hosts, keychain, forwarding, snippets, known hosts, and settings; its navigation
-is hidden during terminal and SFTP work. Toggle Session tools at the top right
-to run snippets or change the terminal theme.
+is hidden during terminal and SFTP work. In an interactive terminal tab, use
+the Session tools button at the top right to run snippets or change the theme.
 
 Host logos update from recognizable login banners and an OS probe after login.
 Linux probes read `/etc/os-release`; other Unix systems use `uname`.
