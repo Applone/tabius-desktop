@@ -18,6 +18,13 @@
       }
     ],
     "security": {
+      "capabilities": [
+        {
+          "identifier": "terminal-clipboard",
+          "windows": ["main"],
+          "permissions": ["clipboard-manager:allow-read-text"]
+        }
+      ],
       "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:"
     }
   },

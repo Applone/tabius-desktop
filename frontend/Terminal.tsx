@@ -1,5 +1,6 @@
 import { ArrowClockwise, X } from "@phosphor-icons/react";
 import { Channel } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
@@ -95,11 +96,11 @@ export function TerminalPane({
           !event.metaKey
         ) {
           event.preventDefault();
-          if (!event.repeat)
-            void navigator.clipboard
-              ?.readText()
+          if (!event.repeat && !hostKeyRef.current)
+            void readText()
               .then((text) => {
-                if (!disposed && !hostKeyRef.current) term.paste(text);
+                if (text && !disposed && !ended && !hostKeyRef.current)
+                  term.paste(text);
               })
               .catch((err) => {
                 if (!disposed) setError(`Could not paste: ${String(err)}`);

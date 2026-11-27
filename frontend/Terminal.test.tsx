@@ -34,8 +34,11 @@ globalThis.cancelAnimationFrame = browser.cancelAnimationFrame.bind(
   browser,
 ) as unknown as typeof cancelAnimationFrame;
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
-Reflect.set(window, "__TAURI_INTERNALS__", { transformCallback: () => 1 });
-const readClipboard = mock(async () => "pasted command");
+const readClipboard = mock(async (_command: string) => "pasted command");
+Reflect.set(window, "__TAURI_INTERNALS__", {
+  transformCallback: () => 1,
+  invoke: readClipboard,
+});
 const pasted = mock((_text: string) => {});
 const osDetected = mock((_id: string, _os: string) => {});
 const copy = mock(async (_text: string) => {});
@@ -45,7 +48,7 @@ Object.defineProperty(globalThis, "navigator", {
 });
 Object.defineProperty(browser.navigator, "clipboard", {
   configurable: true,
-  value: { writeText: copy, readText: readClipboard },
+  value: { writeText: copy },
 });
 
 let terminalInput: ((data: string) => void) | undefined;
@@ -168,6 +171,8 @@ beforeEach(() => {
   resolveStart = undefined;
   copy.mockReset();
   copy.mockResolvedValue(undefined);
+  readClipboard.mockReset();
+  readClipboard.mockResolvedValue("pasted command");
   invoke.mockClear();
   trustChanged.mockClear();
   close.mockClear();
@@ -315,7 +320,7 @@ test("an unavailable clipboard API reports an error instead of interrupting SSH"
     ).toHaveLength(0);
   } finally {
     Object.defineProperty(browser.navigator, "clipboard", {
-      value: { writeText: copy, readText: readClipboard },
+      value: { writeText: copy },
     });
   }
 });
@@ -578,13 +583,47 @@ test("terminal input pauses during verification and resumes after approval", asy
 
 test("physical paste and shell controls work with Cyrillic key values", async () => {
   await mount(true);
-  await terminalKey({ code: "KeyV", key: "М" });
-  expect(pasted).toHaveBeenCalledWith("pasted command");
+  readClipboard.mockResolvedValue("echo Привет\necho hello");
+  const { event, process } = await terminalKey({ code: "KeyV", key: "М" });
+  expect(process).toBe(false);
+  expect(event.defaultPrevented).toBe(true);
+  expect(readClipboard).toHaveBeenCalledWith(
+    "plugin:clipboard-manager|read_text",
+    {},
+    undefined,
+  );
+  expect(pasted).toHaveBeenCalledWith("echo Привет\necho hello");
   await terminalKey({ code: "KeyR", key: "к", shiftKey: false });
   expect(invoke).toHaveBeenCalledWith("write_session", {
     id: session.id,
     data: "\x12",
   });
+});
+test("holding the paste shortcut does not read the clipboard again", async () => {
+  await mount(true);
+  expect((await terminalKey({ code: "KeyV", repeat: true })).process).toBe(
+    false,
+  );
+  expect(readClipboard).not.toHaveBeenCalled();
+  expect(pasted).not.toHaveBeenCalled();
+});
+test("native clipboard read failures are visible without pasting", async () => {
+  await mount(true);
+  readClipboard.mockRejectedValue("Clipboard unavailable");
+  await terminalKey({ code: "KeyV" });
+  expect(container.textContent).toContain(
+    "Could not paste: Clipboard unavailable",
+  );
+  expect(pasted).not.toHaveBeenCalled();
+});
+test("clipboard text is discarded if host verification starts during the read", async () => {
+  await mount(true);
+  const { promise, resolve } = Promise.withResolvers<string>();
+  readClipboard.mockReturnValue(promise);
+  await terminalKey({ code: "KeyV" });
+  await emit({ type: "hostkey", request: hostKey });
+  await act(async () => resolve("pasted command"));
+  expect(pasted).not.toHaveBeenCalled();
 });
 test("OS markers respect detection settings and font size uses points", async () => {
   await mount(true);

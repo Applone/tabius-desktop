@@ -914,6 +914,7 @@ fn apply_sync(app: tauri::AppHandle, previous: Value, workspace: Value) -> Resul
 
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Sessions::default())
         .manage(sftp::Connections::default())
         .manage(local::LocalStorage::default())
