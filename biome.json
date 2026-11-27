@@ -21,5 +21,19 @@
     "rules": {
       "preset": "recommended"
     }
-  }
+  },
+  "html": {
+    "experimentalFullSupportEnabled": true
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.svelte"],
+      "html": {
+        "formatter": {
+          "enabled": true,
+          "indentScriptAndStyle": true
+        }
+      }
+    }
+  ]
 }

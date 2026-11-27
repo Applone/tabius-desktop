@@ -1,6 +1,6 @@
 # Tabius Desktop
 
-A desktop SSH client built with Rust, Tauri 2, React, and xterm.js.
+A desktop SSH client built with Rust, Tauri 2, Svelte 5, and xterm.js.
 
 - Saved hosts and groups, SSH jump hosts, and optional Mosh support.
 - Managed SSH keys, local/remote/SOCKS forwarding, and verified host fingerprints.
@@ -27,7 +27,8 @@ cargo build --release --locked
 ```
 
 Cargo installs frontend dependencies from the frozen Bun lockfile, checks
-TypeScript, and embeds the built UI. No frontend development server is required.
+Svelte and TypeScript, and embeds the built UI. No frontend development server
+is required.
 The release executable is `target/release/tabius-desktop` (`.exe` on Windows).
 OpenSSH 8.5+ is required, including Windows OpenSSH Client. Mosh requires a local
 client and remote server.
@@ -164,6 +165,7 @@ stores encrypted configurations without receiving vault passwords.
 bun install --frozen-lockfile
 bun run check
 bun run test
+bun run build
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
-import { EditorModal } from "./Editors";
+import { flushSync, mount, unmount } from "svelte";
+import EditorModal from "./EditorModal.svelte";
 import type { Host, Workspace } from "./model";
 import { hostChain } from "./model";
 
@@ -24,7 +24,7 @@ function host(overrides: Partial<Host> = {}): Host {
   };
 }
 
-function chainSelect(current: Host, hosts: Host[]): string {
+function chainSelect(current: Host, hosts: Host[]) {
   const workspace: Workspace = {
     hosts,
     keys: [],
@@ -44,19 +44,33 @@ function chainSelect(current: Host, hosts: Host[]): string {
       postQuantum: true,
     },
   };
-  const markup = renderToStaticMarkup(
-    <EditorModal
-      editor={{ type: "host", value: current }}
-      workspace={workspace}
-      onClose={() => {}}
-      onSave={() => {}}
-      onKnown={() => {}}
-    />,
+  const target = document.createElement("div");
+  document.body.append(target);
+  const component = mount(EditorModal, {
+    target,
+    props: {
+      editor: { type: "host", value: current },
+      workspace,
+      onClose: () => {},
+      onSave: () => {},
+      onKnown: () => {},
+    },
+  });
+  flushSync();
+  const label = [...target.querySelectorAll("label")].find(
+    (label) => label.textContent === "Host chaining",
   );
-  const field = markup.split(">Host chaining</label>")[1];
-  const select = field?.match(/<select\b[^>]*>[\s\S]*?<\/select>/)?.[0];
-  expect(select).toBeDefined();
-  return select ?? "";
+  const select = target.querySelector<HTMLSelectElement>(`#${label?.htmlFor}`);
+  const result = {
+    value: select?.value,
+    options: Array.from(select?.options ?? [], (option) => ({
+      value: option.value,
+      label: option.textContent?.trim(),
+    })),
+  };
+  void unmount(component);
+  target.remove();
+  return result;
 }
 
 describe("host chaining", () => {
@@ -86,38 +100,42 @@ describe("host chaining", () => {
       port: 2222,
     });
     const select = chainSelect(current, [current, bastion]);
-    expect(select).toContain('<option value="" selected="">None</option>');
-    expect(select).toContain(
-      '<option value="alice@bastion.example.com:2222">Bastion (bastion.example.com:2222)</option>',
-    );
-    expect(select).not.toContain("Target (");
-    expect(select).not.toContain("Existing route");
+    expect(select.value).toBe("");
+    expect(select.options).toEqual([
+      { value: "", label: "None" },
+      {
+        value: "alice@bastion.example.com:2222",
+        label: "Bastion (bastion.example.com:2222)",
+      },
+    ]);
   });
 
   test("shows a saved route as the selected host", () => {
     const bastion = host({ id: "bastion", name: "Bastion" });
     const current = host({ jump: hostChain(bastion) });
     const select = chainSelect(current, [current, bastion]);
-    expect(select).toContain(
-      '<option value="target.example.com:22" selected="">Bastion',
-    );
-    expect(select).not.toContain("Existing route");
+    expect(select.value).toBe("target.example.com:22");
+    expect(select.options).toHaveLength(2);
+    expect(select.options[1].label).toBe("Bastion (target.example.com:22)");
   });
 
   test("preserves imported routes even when no saved hosts match", () => {
     const current = host({ jump: "alice@old:22,bob@[::1]:2200" });
     const select = chainSelect(current, [current]);
-    expect(select).toContain(
-      '<option value="alice@old:22,bob@[::1]:2200" selected="">Existing route',
-    );
-    expect(select).toContain('<option value="">None</option>');
+    expect(select.value).toBe(current.jump);
+    expect(select.options).toEqual([
+      { value: "", label: "None" },
+      { value: current.jump, label: `Existing route (${current.jump})` },
+    ]);
   });
 
   test("offers None when there are no other saved hosts", () => {
     const current = host();
-    expect(chainSelect(current, [current])).toContain(
-      '<option value="" selected="">None</option>',
-    );
-    expect(chainSelect(current, [])).not.toContain("Existing route");
+    for (const hosts of [[current], []]) {
+      expect(chainSelect(current, hosts)).toEqual({
+        value: "",
+        options: [{ value: "", label: "None" }],
+      });
+    }
   });
 });

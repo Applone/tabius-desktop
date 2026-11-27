@@ -70,11 +70,7 @@ fn main() {
         || fs::read_to_string(&stamp).ok().as_deref() != Some(expected.as_str())
     {
         bun(&root, &["install", "--frozen-lockfile"]);
-        bun(
-            &root,
-            &["--bun", "node_modules/typescript/bin/tsc", "--build"],
-        );
-        bun(&root, &["--bun", "node_modules/vite/bin/vite.js", "build"]);
+        bun(&root, &["run", "--bun", "build"]);
         let output = fingerprint(&root, &["dist"]).expect("cannot read built frontend assets");
         fs::write(stamp, format!("{input}:{output}"))
             .expect("cannot save frontend build fingerprint");

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fileSize, joinPath, parentPath, validName } from "./SFTP";
+import { fileSize, joinPath, parentPath, validName } from "./file-paths";
 
 test("file paths preserve spaces, quotes, Unicode, and root navigation", () => {
   expect(joinPath("/", "a 'quoted' 日本語 file")).toBe(

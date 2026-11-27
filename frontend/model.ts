@@ -84,3 +84,17 @@ export interface KnownHost {
   kind: string;
   fingerprint: string;
 }
+
+export interface Session {
+  fingerprints?: string[];
+  id: string;
+  host: Host;
+  forward?: Forward;
+}
+
+export interface HostKeyRequest {
+  id: string;
+  host: string;
+  kind: string;
+  fingerprint: string;
+}

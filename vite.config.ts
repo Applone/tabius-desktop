@@ -1,7 +1,8 @@
-import react from "@vitejs/plugin-react";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { sveltePhosphorOptimize } from "phosphor-svelte/vite";
 import { defineConfig } from "vite";
 export default defineConfig({
-  plugins: [react()],
+  plugins: [svelte(), sveltePhosphorOptimize()],
   root: "frontend",
   build: { outDir: "../dist", emptyOutDir: true },
   clearScreen: false,

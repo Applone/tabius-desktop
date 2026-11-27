@@ -1,14 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
-import { Window } from "happy-dom";
-import { act } from "react";
+import { createRawSnippet, mount as mountComponent, unmount } from "svelte";
 import * as originalApi from "./api";
-
-const browser = new Window();
-const originalWindow = globalThis.window;
-const originalDocument = globalThis.document;
-globalThis.window = browser as unknown as typeof originalWindow;
-globalThis.document = browser.document as unknown as Document;
-Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
+import { settle } from "./test/dom";
 
 const api = { ...originalApi };
 const invoke = mock(
@@ -17,49 +10,42 @@ const invoke = mock(
   },
 );
 mock.module("./api", () => ({ ...api, native: invoke }));
-const { createRoot } = await import("react-dom/client");
-const { StorageGate } = await import("./StorageGate");
+const { default: StorageGate } = await import("./StorageGate.svelte");
 let container: HTMLDivElement;
-let root: ReturnType<typeof createRoot>;
+let root: Record<string, unknown> | undefined;
 
 beforeEach(() => {
   invoke.mockReset();
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
+  if (root) await unmount(root);
+  root = undefined;
   container.remove();
 });
 afterAll(() => {
   mock.module("./api", () => api);
-  globalThis.window = originalWindow;
-  globalThis.document = originalDocument;
-  Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
-  browser.happyDOM.abort();
 });
 
 async function mount() {
-  await act(async () =>
-    root.render(
-      <StorageGate>
-        <div>Workspace open</div>
-      </StorageGate>,
-    ),
-  );
+  root = mountComponent(StorageGate, {
+    target: container,
+    props: {
+      children: createRawSnippet(() => ({
+        render: () => "<div>Workspace open</div>",
+      })),
+    },
+  });
+  await settle();
 }
 async function passwords(password: string, confirmation = password) {
   const inputs = container.querySelectorAll("input");
   for (const [index, value] of [password, confirmation].entries()) {
     const input = inputs[index];
     if (!input) continue;
-    await act(async () => {
-      // Use the native setter so React observes the user edit.
-      Object.getOwnPropertyDescriptor(
-        browser.HTMLInputElement.prototype,
-        "value",
-      )?.set?.call(input, value);
+    await settle(() => {
+      input.value = value;
       input.dispatchEvent(new window.Event("input", { bubbles: true }));
     });
   }
@@ -67,7 +53,7 @@ async function passwords(password: string, confirmation = password) {
 async function submit() {
   const form = container.querySelector("form");
   expect(form).not.toBeNull();
-  await act(async () => {
+  await settle(() => {
     form?.dispatchEvent(
       new window.Event("submit", { bubbles: true, cancelable: true }),
     );
@@ -78,7 +64,7 @@ async function click(text: string) {
     (button) => button.textContent === text,
   );
   expect(button).toBeDefined();
-  await act(async () => button?.click());
+  await settle(() => button?.click());
 }
 
 test("first launch confirms the password and opens the workspace only after encryption", async () => {

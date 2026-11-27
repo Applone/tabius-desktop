@@ -2,18 +2,15 @@ import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
 import type { Channel } from "@tauri-apps/api/core";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { ITerminalAddon, ITerminalOptions } from "@xterm/xterm";
-import { Window as HappyWindow } from "happy-dom";
-import { act } from "react";
+import { mount as mountComponent, unmount } from "svelte";
 import * as originalApi from "./api";
-import type { Settings } from "./model";
-import type { Session } from "./Terminal";
+import type { Session, Settings } from "./model";
+import { browser, settle } from "./test/dom";
+import { reactiveProps } from "./test/reactive-props.svelte.ts";
 
 const api = { ...originalApi };
 const xterm = { ...(await import("@xterm/xterm")) };
 const addon = { ...(await import("@xterm/addon-fit")) };
-const browser = new HappyWindow();
-const previousWindow = globalThis.window;
-const previousDocument = globalThis.document;
 const previousStyle = globalThis.getComputedStyle;
 const previousObserver = globalThis.ResizeObserver;
 const previousFrame = globalThis.requestAnimationFrame;
@@ -22,8 +19,6 @@ const previousNavigator = Object.getOwnPropertyDescriptor(
   globalThis,
   "navigator",
 );
-globalThis.window = browser as unknown as typeof window;
-globalThis.document = browser.document as unknown as Document;
 globalThis.getComputedStyle = browser.getComputedStyle.bind(
   browser,
 ) as unknown as typeof getComputedStyle;
@@ -34,7 +29,6 @@ globalThis.requestAnimationFrame = browser.requestAnimationFrame.bind(
 globalThis.cancelAnimationFrame = browser.cancelAnimationFrame.bind(
   browser,
 ) as unknown as typeof cancelAnimationFrame;
-Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 const readClipboard = mock(async (_command: string) => "pasted command");
 Reflect.set(window, "__TAURI_INTERNALS__", {
   transformCallback: () => 1,
@@ -126,9 +120,8 @@ const invoke = mock(async (name: string, args?: Record<string, unknown>) => {
   return "session-test";
 });
 mock.module("./api", () => ({ ...api, native: invoke }));
-const { TerminalPane } = await import("./Terminal");
-const { createRoot } = await import("react-dom/client");
-let root: ReturnType<typeof createRoot>;
+const { default: TerminalPane } = await import("./TerminalPane.svelte");
+let root: Record<string, unknown> | undefined;
 let container: HTMLDivElement;
 const trustChanged = mock(() => {});
 const close = mock(() => {});
@@ -183,18 +176,16 @@ beforeEach(() => {
   close.mockClear();
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
+  if (root) await unmount(root);
+  root = undefined;
   container.remove();
 });
 afterAll(() => {
   mock.module("./api", () => api);
   mock.module("@xterm/xterm", () => xterm);
   mock.module("@xterm/addon-fit", () => addon);
-  globalThis.window = previousWindow;
-  globalThis.document = previousDocument;
   globalThis.getComputedStyle = previousStyle;
   globalThis.ResizeObserver = previousObserver;
   globalThis.requestAnimationFrame = previousFrame;
@@ -202,30 +193,28 @@ afterAll(() => {
   if (previousNavigator)
     Object.defineProperty(globalThis, "navigator", previousNavigator);
   else Reflect.deleteProperty(globalThis, "navigator");
-  Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
-  browser.happyDOM.abort();
+});
+const props = reactiveProps({
+  session,
+  active: false,
+  focusRequest: 0,
+  settings,
+  onClose: close,
+  onOS: osDetected,
+  onTrustChanged: trustChanged,
 });
 async function mount(active = false, preferences = settings) {
-  await act(async () =>
-    root.render(
-      <TerminalPane
-        session={session}
-        active={active}
-        focusRequest={0}
-        settings={preferences}
-        onClose={close}
-        onOS={osDetected}
-        onTrustChanged={trustChanged}
-      />,
-    ),
-  );
+  props.active = active;
+  props.settings = preferences;
+  if (!root) root = mountComponent(TerminalPane, { target: container, props });
+  await settle();
 }
 const reconnect = () =>
   [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Reconnect"),
   );
 async function emit(message: unknown) {
-  await act(async () => output.onmessage(message));
+  await settle(() => output.onmessage(message));
 }
 async function terminalKey(options: KeyboardEventInit = {}, type = "keydown") {
   const event = new window.KeyboardEvent(type, {
@@ -237,7 +226,7 @@ async function terminalKey(options: KeyboardEventInit = {}, type = "keydown") {
     ...options,
   });
   let process = true;
-  await act(async () => {
+  await settle(() => {
     process = terminals[0]?.keyHandler?.(event) ?? true;
     if (process && type === "keydown") terminalInput?.("\x03");
   });
@@ -470,7 +459,7 @@ test("a clean exit without a logout request leaves the tab open", async () => {
   deferStart = true;
   await mount();
   expect(reconnect()).toBeUndefined();
-  await act(async () => resolveStart?.("session-test"));
+  await settle(() => resolveStart?.("session-test"));
   expect(container.textContent).toContain("Running");
   expect(reconnect()).toBeUndefined();
   await emit({ type: "exit", code: 0, manual: false });
@@ -499,7 +488,7 @@ test("SSH errors offer reconnect and retry hides it until another failure", asyn
   await emit({ type: "exit", code: 255, manual: false });
   expect(reconnect()).toBeDefined();
   expect(close).not.toHaveBeenCalled();
-  await act(async () => reconnect()?.click());
+  await settle(() => reconnect()?.click());
   expect(reconnect()).toBeUndefined();
   expect(
     invoke.mock.calls.filter(([name]) => name === "start_session"),
@@ -519,7 +508,7 @@ test("an early exit is not overwritten by the start acknowledgement", async () =
   deferStart = true;
   await mount();
   await emit({ type: "exit", code: 255, manual: false });
-  await act(async () => resolveStart?.("session-test"));
+  await settle(() => resolveStart?.("session-test"));
   expect(container.textContent).toContain("Disconnected");
   expect(reconnect()).toBeDefined();
 });
@@ -529,7 +518,8 @@ test("trust notifications refresh host fingerprints and late messages are ignore
   expect(trustChanged).not.toHaveBeenCalled();
   await emit({ type: "trustchanged" });
   expect(trustChanged).toHaveBeenCalledTimes(1);
-  await act(async () => root.render(null));
+  if (root) await unmount(root);
+  root = undefined;
   await emit({ type: "trustchanged" });
   expect(trustChanged).toHaveBeenCalledTimes(1);
 });
@@ -545,7 +535,7 @@ async function clickAction(label: string) {
     ...container.querySelectorAll<HTMLButtonElement>("dialog button"),
   ].find((button) => button.textContent?.trim() === label);
   expect(button).toBeDefined();
-  await act(async () => button?.click());
+  await settle(() => button?.click());
 }
 test.each([
   ["Continue once", "once"],
@@ -584,7 +574,7 @@ test("aborting or dismissing host verification closes the login", async () => {
 test("Escape aborts verification and connection exit removes pending dialogs", async () => {
   await mount(true);
   await emit({ type: "hostkey", request: hostKey });
-  await act(async () =>
+  await settle(() =>
     container.querySelector("dialog")?.dispatchEvent(
       new window.KeyboardEvent("keydown", {
         key: "Escape",
@@ -614,7 +604,7 @@ test("background verification waits for its tab and start acknowledgement does n
   await mount();
   await emit({ type: "hostkey", request: hostKey });
   expect(container.querySelector("dialog")).toBeNull();
-  await act(async () => resolveStart?.(session.id));
+  await settle(() => resolveStart?.(session.id));
   expect(container.textContent).toContain("Awaiting host verification");
   await mount(true);
   expect(container.querySelector("dialog[open]")?.textContent).toContain(
@@ -625,12 +615,12 @@ test("background verification waits for its tab and start acknowledgement does n
 test("terminal input pauses during verification and resumes after approval", async () => {
   await mount(true);
   await emit({ type: "hostkey", request: hostKey });
-  await act(async () => terminalInput?.("yes\r"));
+  await settle(() => terminalInput?.("yes\r"));
   expect(
     invoke.mock.calls.filter(([name]) => name === "write_session"),
   ).toHaveLength(0);
   await clickAction("Continue once");
-  await act(async () => terminalInput?.("uptime\r"));
+  await settle(() => terminalInput?.("uptime\r"));
   expect(invoke).toHaveBeenCalledWith("write_session", {
     id: "session-test",
     data: "uptime\r",
@@ -678,7 +668,7 @@ test("clipboard text is discarded if host verification starts during the read", 
   readClipboard.mockReturnValue(promise);
   await terminalKey({ code: "KeyV" });
   await emit({ type: "hostkey", request: hostKey });
-  await act(async () => resolve("pasted command"));
+  await settle(() => resolve("pasted command"));
   expect(pasted).not.toHaveBeenCalled();
 });
 test("OS markers respect detection settings and font size uses points", async () => {

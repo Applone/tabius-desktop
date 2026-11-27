@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 export const shortcutLabels = {
   newTab: "New tab",
   closeTab: "Close active tab",
@@ -92,36 +90,30 @@ export function shortcutAction(
     (action) => bindings[action] === chord,
   );
 }
-export function useShortcuts(
+export function listenForShortcuts(
   overrides: Partial<Shortcuts> | undefined,
-  enabled: boolean,
   onAction: (action: ShortcutAction) => void,
 ) {
-  const callback = useRef(onAction);
-  callback.current = onAction;
-  useEffect(() => {
-    if (!enabled) return;
-    const bindings = { ...shortcutDefaults(isMac()), ...overrides };
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        document.querySelector("dialog[open]") ||
-        (target instanceof window.Element &&
-          (target.closest(
-            "[data-shortcut-recorder], [contenteditable]:not([contenteditable='false'])",
-          ) ||
-            (target.closest("input, textarea, select") &&
-              !target.closest(".xterm"))))
-      )
-        return;
-      const action = shortcutAction(event, bindings);
-      if (!action) return;
-      event.preventDefault();
-      event.stopPropagation();
-      callback.current(action);
-    };
-    // Capture before xterm sees the event so app shortcuts never reach the shell.
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [overrides, enabled]);
+  const bindings = { ...shortcutDefaults(isMac()), ...overrides };
+  const handler = (event: KeyboardEvent) => {
+    const target = event.target;
+    if (
+      document.querySelector("dialog[open]") ||
+      (target instanceof window.Element &&
+        (target.closest(
+          "[data-shortcut-recorder], [contenteditable]:not([contenteditable='false'])",
+        ) ||
+          (target.closest("input, textarea, select") &&
+            !target.closest(".xterm"))))
+    )
+      return;
+    const action = shortcutAction(event, bindings);
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onAction(action);
+  };
+  // Capture before xterm sees the event so app shortcuts never reach the shell.
+  window.addEventListener("keydown", handler, true);
+  return () => window.removeEventListener("keydown", handler, true);
 }

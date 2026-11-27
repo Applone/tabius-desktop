@@ -7,8 +7,7 @@ import {
   mock,
   test,
 } from "bun:test";
-import { Window as HappyWindow } from "happy-dom";
-import { act, useEffect } from "react";
+import { mount as mountComponent, unmount } from "svelte";
 import * as originalApi from "./api";
 import type { Host, KnownHost, Settings, Workspace } from "./model";
 import {
@@ -17,52 +16,17 @@ import {
   shortcutAction,
   shortcutDefaults,
 } from "./shortcuts";
-import { adjacentTab, cycleTab, reorderTabs } from "./Tabs";
+import { adjacentTab, cycleTab, reorderTabs } from "./tab-order";
+import { browser, settle } from "./test/dom";
+import MockTerminal, { mounts, unmounts } from "./test/MockTerminal.svelte";
 
-const browser = new HappyWindow();
-const previousWindow = globalThis.window;
-const previousDocument = globalThis.document;
 const previousNavigator = Object.getOwnPropertyDescriptor(
   globalThis,
   "navigator",
 );
-globalThis.window = browser as unknown as typeof previousWindow;
-globalThis.document = browser.document as unknown as Document;
-Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 const api = { ...originalApi };
-const mounts: string[] = [];
-const unmounts: string[] = [];
-function MockTerminal({
-  session,
-  active,
-  onClose,
-  onTrustChanged,
-}: {
-  session: { id: string };
-  active: boolean;
-  onClose: () => void;
-  onTrustChanged: () => void;
-}) {
-  useEffect(() => {
-    mounts.push(session.id);
-    return () => {
-      unmounts.push(session.id);
-    };
-  }, [session.id]);
-  return (
-    <div className="xterm" data-active={active} data-session={session.id}>
-      <textarea aria-label={`Terminal ${session.id}`} />
-      <button type="button" onClick={onTrustChanged}>
-        Accept test fingerprint
-      </button>
-      <button type="button" onClick={onClose}>
-        Report logout
-      </button>
-    </div>
-  );
-}
-const originalTerminal = { ...(await import("./Terminal")) };
-mock.module("./Terminal", () => ({ TerminalPane: MockTerminal }));
+const originalTerminal = { ...(await import("./TerminalPane.svelte")) };
+mock.module("./TerminalPane.svelte", () => ({ default: MockTerminal }));
 const settings: Settings = {
   autoReconnect: false,
   bell: false,
@@ -169,21 +133,16 @@ mock.module("./api", () => ({
   saveWorkspace: save,
   native: invoke,
 }));
-const { createRoot } = await import("react-dom/client");
-const { App } = await import("./App");
-let root: ReturnType<typeof createRoot>;
+const { default: App } = await import("./App.svelte");
+let root: Record<string, unknown> | undefined;
 let container: HTMLDivElement;
 
 afterAll(() => {
   mock.module("./api", () => api);
-  mock.module("./Terminal", () => originalTerminal);
-  globalThis.window = previousWindow;
-  globalThis.document = previousDocument;
+  mock.module("./TerminalPane.svelte", () => originalTerminal);
   if (previousNavigator)
     Object.defineProperty(globalThis, "navigator", previousNavigator);
   else Reflect.deleteProperty(globalThis, "navigator");
-  Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
-  browser.happyDOM.abort();
 });
 
 describe.each(["Linux x86_64", "MacIntel", "Win32"])(
@@ -219,15 +178,16 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       save.mockClear();
       container = document.createElement("div");
       document.body.append(container);
-      root = createRoot(container);
     });
     afterEach(async () => {
-      await act(async () => root.unmount());
+      if (root) await unmount(root);
+      root = undefined;
       container.remove();
     });
 
     async function mount() {
-      await act(async () => root.render(<App />));
+      root = mountComponent(App, { target: container });
+      await settle();
     }
     async function click(selector: string, label?: string) {
       const element = [
@@ -239,7 +199,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
           element.getAttribute("aria-label") === label,
       );
       expect(element).toBeDefined();
-      await act(async () => element?.click());
+      await settle(() => element?.click());
     }
     async function key(
       code: string,
@@ -259,7 +219,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         value: (name: string) =>
           name === "AltGraph" ? false : modifierState(name),
       });
-      await act(async () => {
+      await settle(() => {
         target.dispatchEvent(event);
       });
       return event;
@@ -267,16 +227,13 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
     async function input(selector: string, value: string) {
       const element = container.querySelector<HTMLInputElement>(selector);
       expect(element).not.toBeNull();
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(
-          browser.HTMLInputElement.prototype,
-          "value",
-        )?.set?.call(element, value);
+      await settle(() => {
+        if (element) element.value = value;
         element?.dispatchEvent(new window.Event("input", { bubbles: true }));
       });
     }
     async function submit() {
-      await act(async () => {
+      await settle(() => {
         container
           .querySelector("dialog form")
           ?.dispatchEvent(
@@ -289,7 +246,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       const buttons = container.querySelectorAll<HTMLButtonElement>(
         ".host-picker-list button",
       );
-      await act(async () => buttons[index]?.click());
+      await settle(() => buttons[index]?.click());
     }
     const selectedTab = () =>
       container
@@ -518,7 +475,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         ...container.querySelectorAll<HTMLButtonElement>(".xterm button"),
       ].filter((button) => button.textContent === "Report logout");
       expect(logoutButtons).toHaveLength(2);
-      await act(async () => {
+      await settle(() => {
         for (const button of logoutButtons.reverse()) button.click();
       });
       expect(selectedTab()).toBe("Library");
@@ -655,7 +612,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
         });
         return event;
       };
-      await act(async () => {
+      await settle(() => {
         tabs[0].dispatchEvent(drag("dragstart"));
         tabs[1].dispatchEvent(drag("dragover"));
         tabs[1].dispatchEvent(drag("drop"));
@@ -705,8 +662,8 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       await key("KeyT", { altKey: true });
       expect(container.querySelector("dialog[open]")).not.toBeNull();
       await click('button[aria-label="Close dialog"]');
-      await act(async () => root.unmount());
-      root = createRoot(container);
+      if (root) await unmount(root);
+      root = undefined;
       await mount();
       await key("KeyT", { altKey: true });
       expect(container.querySelector("dialog[open]")).not.toBeNull();
@@ -751,7 +708,7 @@ describe.each(["Linux x86_64", "MacIntel", "Win32"])(
       const event = await key("Escape", { key: "Escape" }, option);
       expect(event.defaultPrevented).toBe(false);
       expect(dialog.isConnected).toBe(true);
-      await act(async () => {
+      await settle(() => {
         dialog.dispatchEvent(new window.Event("cancel", { cancelable: true }));
       });
       expect(dialog.isConnected).toBe(false);
